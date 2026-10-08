@@ -1,8 +1,8 @@
 # Datamine
 
-A multilingual workspace for travel agencies, built with Next.js, TypeScript, PostgreSQL, Drizzle, Better Auth, and next-intl. Phase 1 establishes authenticated agency workspaces and WhatsApp Cloud API routing.
+A multilingual travel-agency demo built with Next.js, TypeScript, PostgreSQL, Drizzle, Better Auth, and next-intl. Phase 2 adds a simple agency inbox and customer records to the existing foundation.
 
-## Available in Phase 1
+## Available in the demo
 
 - Staff login with closed public registration, database-backed rate limits, and password changes.
 - Agency creation and explicit memberships. Even the platform owner needs an agency membership to read its private data.
@@ -10,10 +10,15 @@ A multilingual workspace for travel agencies, built with Next.js, TypeScript, Po
 - English, Arabic, and Sorani interfaces, including right-to-left layouts. Translations should receive native-speaker review before the live pilot.
 - Meta account/phone verification, encrypted API credentials, signature verification, account-aware inbound routing, durable messages/events, and duplicate suppression.
 - Incoming-message inspection for authorized staff, including explicit labels for unsupported media.
-- A public **read-only sample tour** at `/en/demo`, `/ar/demo`, and `/ckb/demo`. These records are fixtures, never real customer data.
-- An optional pg-boss worker that periodically verifies stored WhatsApp number credentials. AI processing is not enabled in Phase 1.
+- An inbox at `/en/app/inbox` with agency selection, customer search, status filters, the latest 100 messages, and manual refresh.
+- One customer/inquiry record per phone number per connected inbox: name, service, destination, New / In progress / Closed, and a private note. Incoming messages create records automatically, including backfilled Phase 1 messages.
+- Text replies from the correct agency number, with accepted/sent/delivered/read/failed/uncertain states. Viewers cannot reply or edit records.
+- An **interactive sample inbox** at `/en/demo/inbox`, `/ar/demo/inbox`, and `/ckb/demo/inbox`. Replies are simulated and edits reset on leaving the inbox; sample records never reach Meta or the database.
+- An optional pg-boss worker for connection health. The inbox needs no worker or new infrastructure.
 
-Inbox replies, CRM inquiry workflows, Haiku analysis, shared enrollment, and campaigns are later phases. The planned model is **`claude-haiku-5-5`**; no alternate provider is configured. Delivery event history is stored from Meta callbacks, not inferred by AI.
+Haiku analysis, shared enrollment, and campaigns remain later phases. The planned model is **`claude-haiku-5-5`**. Delivery states come from Meta callbacks, never AI. Assignments, reminders, multiple trips per customer, media previews, templates, and automatic replies are deliberately outside this simple demo.
+
+Replies are saved before a direct Meta request. A unique request ID prevents repeated submissions; a lost response is marked uncertain and is not retried automatically. Signed callbacks can reconcile it, and delayed events cannot move read/delivered messages backward. Text replies require a customer message within the last 24 hours, following [WhatsApp's messaging policy](https://business.whatsapp.com/policy). Outside that window, this demo waits for another customer message.
 
 ## Local development
 
@@ -59,7 +64,7 @@ With the locally built app running against the isolated local socket database, r
 node --env-file=.env.local --import tsx scripts/smoke.ts
 ```
 
-This exercises login, closed registration, invitations, role boundaries, cross-agency isolation, three locales, webhook signatures, multi-agency batches, replay deduplication, and CSRF protection. It creates clearly named test fixtures and **refuses to run against a remote deployment**. Production health is checked separately through `/api/health`.
+This exercises login, invitations, agency isolation, three locales, signed webhooks, customer edits, viewer restrictions, duplicate reply requests, expired reply windows, out-of-order delivery callbacks, uncertain-send reconciliation, and CSRF protection. All Meta sends are mocked. It creates test fixtures and **refuses to run against a remote deployment**. Production health is checked separately through `/api/health`.
 
 ## Deployment
 

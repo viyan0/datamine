@@ -43,7 +43,7 @@ Render background workers require a paid plan, so the free demo Blueprint does n
 4. Send a controlled test text to each real number. The connection changes from **Credentials verified** to **Receiving events** only after a valid, signed callback. Inspect received messages and confirm agency routing.
 5. Replay a webhook and confirm the stored message count does not increase.
 
-No real Meta credentials were supplied during implementation. Provider verification, live webhook subscriptions, and real message routing cannot be claimed complete until these steps are performed. No outbound messages or template sends are implemented in Phase 1.
+No real Meta credentials were supplied during implementation. Provider verification, live webhook subscriptions, and real message routing cannot be claimed complete until these steps are performed. Phase 2 implements text replies within the customer-service window; a controlled real reply and delivery callback test remains pending. Templates are outside the demo.
 
 ## Operational notes
 

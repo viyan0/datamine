@@ -103,7 +103,7 @@ export async function loadWorkspace(current: {
     db
       .select({ count: sql<number>`count(*)::integer` })
       .from(messages)
-      .where(inArray(messages.agencyId, ids)),
+      .where(and(inArray(messages.agencyId, ids), eq(messages.direction, 'inbound'))),
   ]);
   return {
     user: own,

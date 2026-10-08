@@ -163,7 +163,9 @@ export const messages = pgTable(
     connectionId: text('connection_id')
       .notNull()
       .references(() => connections.id),
-    providerMessageId: text('provider_message_id').notNull(),
+    providerMessageId: text('provider_message_id'),
+    requestId: text('request_id'),
+    deliveryStatus: text('delivery_status').default('received').notNull(),
     direction: text('direction').notNull(),
     contactPhone: text('contact_phone').notNull(),
     type: text('type').notNull(),
@@ -173,7 +175,35 @@ export const messages = pgTable(
   },
   (t) => [
     uniqueIndex('message_provider_unique').on(t.connectionId, t.providerMessageId),
+    uniqueIndex('message_request_unique').on(t.requestId),
+    index('message_thread_idx').on(t.connectionId, t.contactPhone, t.providerTimestamp),
     index('message_agency_idx').on(t.agencyId),
+  ],
+);
+// One customer thread per connected agency number keeps the demo deliberately small.
+export const conversations = pgTable(
+  'conversations',
+  {
+    id: text('id').primaryKey(),
+    agencyId: text('agency_id')
+      .notNull()
+      .references(() => agencies.id),
+    connectionId: text('connection_id')
+      .notNull()
+      .references(() => connections.id),
+    contactPhone: text('contact_phone').notNull(),
+    name: text('name').notNull(),
+    service: text('service').default('other').notNull(),
+    destination: text('destination').default('').notNull(),
+    inquiryStatus: text('inquiry_status').default('new').notNull(),
+    note: text('note').default('').notNull(),
+    lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }).notNull(),
+    lastMessageAt: timestamp('last_message_at', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('conversation_contact_unique').on(t.connectionId, t.contactPhone),
+    index('conversation_agency_idx').on(t.agencyId, t.lastMessageAt),
   ],
 );
 export const auditEvents = pgTable('audit_events', {

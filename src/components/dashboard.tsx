@@ -36,10 +36,12 @@ import { LanguageSwitch } from './language-switch';
 import { WorkspaceForm, type FormKind } from './workspace-form';
 import { Dialog } from './dialog';
 import { authClient } from '@/lib/auth-client';
+import { AgencyInbox } from './inbox';
 
 const languageNames: Record<string, string> = { en: 'English', ar: 'العربية', ckb: 'کوردی' };
 const nav = [
   { key: 'overview', icon: LayoutGrid },
+  { key: 'inbox', icon: Inbox },
   { key: 'agencies', icon: Building2 },
   { key: 'team', icon: Users },
   { key: 'connections', icon: MessageCircle },
@@ -93,6 +95,7 @@ export function Dashboard({
   }
   const headerKeys: Record<string, [string, string]> = {
     overview: ['welcome', 'welcomeSub'],
+    inbox: ['inboxTitle', 'inboxSub'],
     agencies: ['agenciesTitle', 'agenciesSub'],
     team: ['teamTitle', 'teamSub'],
     connections: ['connectionTitle', 'connectionSub'],
@@ -202,7 +205,6 @@ export function Dashboard({
         <p className="nav-label future-label">{t('comingNext')}</p>
         <div className="future-nav">
           {[
-            { key: 'inbox', icon: Inbox },
             { key: 'intelligence', icon: Sparkles },
             { key: 'campaigns', icon: Megaphone },
           ].map(({ key, icon: Icon }) => (
@@ -216,7 +218,7 @@ export function Dashboard({
         <div className="sidebar-bottom">
           <div className="phase-card">
             <span className="phase-dot" />
-            <strong>{t('phaseOne')}</strong>
+            <strong>{t('phaseTwo')}</strong>
             <p>{t('phaseCaption')}</p>
             <div className="phase-track">
               <span />
@@ -261,7 +263,7 @@ export function Dashboard({
           <div className="topbar-right">
             <span className="pilot-tag">
               <span className="small-dot" />
-              {t('phaseOne')}
+              {t('phaseTwo')}
             </span>
             <LanguageSwitch />
           </div>
@@ -278,10 +280,10 @@ export function Dashboard({
             </Link>
           </div>
         )}
-        <main className="dashboard-content">
+        <main className={`dashboard-content ${section === 'inbox' ? 'inbox-content' : ''}`}>
           <div className="page-heading">
             <div>
-              <p className="eyebrow">{t('today')}</p>
+              <p className="eyebrow">{t(section === 'inbox' ? 'inbox' : 'today')}</p>
               <h1>{t(currentHeader[0])}</h1>
               <p>{t(currentHeader[1])}</p>
             </div>
@@ -317,6 +319,7 @@ export function Dashboard({
               </button>
             </div>
           )}
+          {section === 'inbox' && <AgencyInbox data={data} demo={demo} />}
           {section === 'overview' && (
             <>
               <div className="stats-grid">
@@ -459,7 +462,7 @@ export function Dashboard({
                   <span className="eyebrow">{t('networkLabel')}</span>
                   <h2>{t('nextTitle')}</h2>
                   <p>{t('nextText')}</p>
-                  <Link href={`${root}/connections`}>
+                  <Link href={`${root}/inbox`}>
                     {t('explore')}
                     <ArrowRight size={15} className="directional" />
                   </Link>
@@ -634,7 +637,7 @@ export function Dashboard({
             <span>
               Datamine <span>✦</span> {t('brandTag')}
             </span>
-            <span>{t('phaseOne')}</span>
+            <span>{t('phaseTwo')}</span>
           </footer>
         </main>
       </div>

@@ -15,6 +15,13 @@
       "when": 1791453534144,
       "tag": "0001_tidy_korath",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791455270724,
+      "tag": "0002_easy_vargas",
+      "breakpoints": true
     }
   ]
 }

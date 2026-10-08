@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID, createHmac } from 'node:crypto';
 import { getPool } from '../src/db/index';
 import { encrypt } from '../src/lib/security';
+import { replyToConversation } from '../src/lib/inbox';
 const base = process.env.BETTER_AUTH_URL || 'http://localhost:3000';
 if (
   new URL(base).hostname !== 'localhost' ||
@@ -207,6 +208,163 @@ try {
   const visible = await req(`/api/agencies/${a.data.id}/messages`, 'GET', undefined, viewer);
   assert.equal(visible.data.messages.length, 1);
   assert.equal(visible.data.messages[0].body, `Private for ${idA}`);
+  // Phase 2: persisted customer records, scoped edits, real HTTP permissions, and mocked Meta sends.
+  const threads = await req(`/api/agencies/${a.data.id}/conversations`, 'GET', undefined, viewer);
+  assert.equal(threads.status, 200);
+  assert.equal(threads.data.conversations.length, 1);
+  const thread = threads.data.conversations[0];
+  const threadPath = `/api/agencies/${a.data.id}/conversations/${thread.id}`;
+  const fields = {
+    name: 'Demo Customer',
+    service: 'flight',
+    destination: 'Erbil → Istanbul',
+    inquiryStatus: 'inProgress',
+    note: 'Private team note',
+  };
+  assert.equal((await req(threadPath, 'PATCH', fields, viewer)).status, 403);
+  assert.equal(
+    (await req(`${threadPath}/reply`, 'POST', { body: 'Blocked', requestId: randomUUID() }, viewer))
+      .status,
+    403,
+  );
+  assert.equal(
+    (await req(`/api/agencies/${b.data.id}/conversations/${thread.id}`, 'GET', undefined, viewer))
+      .status,
+    403,
+  );
+  assert.equal(
+    (await req(`/api/agencies/${b.data.id}/conversations/${thread.id}`, 'GET', undefined, owner))
+      .status,
+    404,
+  );
+  assert.equal((await req(threadPath, 'PATCH', fields, owner)).status, 200);
+  const updated = await req(`/api/agencies/${a.data.id}/conversations`, 'GET', undefined, owner);
+  assert.equal(updated.data.conversations[0].note, fields.note);
+  assert.equal(updated.data.conversations[0].name, fields.name);
+  const originalFetch = globalThis.fetch;
+  let sends = 0;
+  let mockStatus = 200;
+  let outboundCallbackId = '';
+  globalThis.fetch = async (input, init) => {
+    if (!String(input).startsWith('https://graph.facebook.com/')) return originalFetch(input, init);
+    sends++;
+    const sent = JSON.parse(String(init?.body));
+    assert.equal(sent.to, thread.contactPhone);
+    assert.ok(String(input).includes(connected.rows.find((r) => r.id === idA).phone_number_id));
+    outboundCallbackId = sent.biz_opaque_callback_data;
+    if (mockStatus === 0) throw new Error('Simulated lost response');
+    return Response.json(
+      mockStatus === 200 ? { messages: [{ id: `wamid.reply-${suffix}-${sends}` }] } : { error: {} },
+      { status: mockStatus },
+    );
+  };
+  try {
+    const requestId = randomUUID();
+    const results = await Promise.all([
+      replyToConversation(a.data.id, thread.id, 'Your flight options are ready.', requestId),
+      replyToConversation(a.data.id, thread.id, 'Your flight options are ready.', requestId),
+    ]);
+    assert.equal(sends, 1, 'Duplicate requests must not send twice');
+    assert.equal(results[0].id, results[1].id);
+    assert.equal(
+      (
+        await req(
+          `${threadPath}/reply`,
+          'POST',
+          { body: 'Your flight options are ready.', requestId },
+          owner,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await req(`${threadPath}/reply`, 'POST', { body: 'Different body', requestId }, owner))
+        .status,
+      409,
+    );
+    async function delivery(status: string, providerId: string, callbackId: string) {
+      const data = {
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: '22222',
+            changes: [
+              {
+                field: 'messages',
+                value: {
+                  metadata: {
+                    phone_number_id: connected.rows.find((r) => r.id === idA).phone_number_id,
+                  },
+                  statuses: [
+                    {
+                      id: providerId,
+                      status,
+                      timestamp: String(Math.floor(Date.now() / 1000)),
+                      biz_opaque_callback_data: callbackId,
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const body = JSON.stringify(data);
+      assert.equal(
+        (
+          await webhook(
+            body,
+            `sha256=${createHmac('sha256', appSecret).update(body).digest('hex')}`,
+          )
+        ).status,
+        200,
+      );
+    }
+    for (const state of ['read', 'delivered', 'sent', 'failed', 'read'])
+      await delivery(state, `wamid.reply-${suffix}-1`, outboundCallbackId);
+    const history = await req(threadPath, 'GET', undefined, viewer);
+    assert.equal(
+      history.data.messages.find((m: { id: string }) => m.id === results[0].id).deliveryStatus,
+      'read',
+    );
+    mockStatus = 400;
+    assert.equal(
+      (await replyToConversation(a.data.id, thread.id, 'Rejected test', randomUUID()))
+        .deliveryStatus,
+      'failed',
+    );
+    mockStatus = 0;
+    const uncertainId = randomUUID();
+    const uncertain = await replyToConversation(a.data.id, thread.id, 'Timeout test', uncertainId);
+    assert.equal(uncertain.deliveryStatus, 'uncertain');
+    await replyToConversation(a.data.id, thread.id, 'Timeout test', uncertainId);
+    assert.equal(sends, 3, 'Uncertain sends must not be retried');
+    await delivery('delivered', `wamid.recovered-${suffix}`, outboundCallbackId);
+    assert.equal(
+      (await req(threadPath, 'GET', undefined, owner)).data.messages.find(
+        (m: { id: string }) => m.id === uncertain.id,
+      ).deliveryStatus,
+      'delivered',
+    );
+    await pool.query(
+      "UPDATE conversations SET last_inbound_at = now() - interval '25 hours' WHERE id=$1",
+      [thread.id],
+    );
+    assert.equal(
+      (
+        await req(
+          `${threadPath}/reply`,
+          'POST',
+          { body: 'Expired window', requestId: randomUUID() },
+          owner,
+        )
+      ).status,
+      409,
+    );
+    assert.equal(sends, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
   const foreign = await fetch(base + '/api/agencies', {
     method: 'POST',
     headers: {
@@ -218,7 +376,7 @@ try {
   });
   assert.equal(foreign.status, 403);
   console.log(
-    'PASS: health, three locales, login, closed registration, invitations, single-use tokens, viewer permissions, agency isolation, encrypted credentials, signed multi-agency webhooks, duplicate replay, and cross-origin protection.',
+    'PASS: auth, three locales, agency isolation, customer edits, viewer restrictions, signed webhook routing, duplicate sends, reply window, out-of-order delivery, timeout reconciliation, and cross-origin protection. Meta sends were mocked; no real messages sent.',
   );
 } finally {
   await pool.end();

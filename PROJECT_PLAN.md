@@ -1,6 +1,12 @@
 # Datamine implementation plan
 
-Updated 8 October 2026. Current phase: Phase 1 implemented and locally tested; Render deployment and live agency onboarding pending external setup. See DELIVERY.md for verified status and remaining work.
+Updated 8 October 2026. Current phase: simple Phase 2 demo implemented and locally tested; Render deployment and live agency onboarding still pending external setup. See DELIVERY.md for verified status.
+
+## Demo scope adjustment
+
+The user requested a simple demo without complicated features. Phase 2 therefore provides agency inboxes, search/status filters, text replies, customer details, one active inquiry record per connected-number/contact pair, and one editable private note. No assignments, reminder scheduler, separate contacts module, multi-trip workflow, or new worker is required. Messages refresh manually; the view shows the latest 100 messages. The sample inbox permits simulated replies and temporary edits without external sends.
+
+The demo persists outbound requests and submits directly to Meta with request deduplication and explicit uncertain outcomes. The durable queues, advanced CRM features, and wider pilot capabilities below remain future plans, not requirements for this demo. Haiku remains Phase 3.
 
 Build a live travel-agency pilot on Render with PostgreSQL, multiple existing WhatsApp Cloud API accounts, and English, Arabic, and Kurdish interfaces. Claude Haiku 5.5 is the sole AI model for message classification, information extraction, and conversation analysis. The initial pilot targets three agencies and Datamine's own offer-sending account.
 

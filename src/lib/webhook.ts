@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { connections, providerEvents, messages } from '@/db/schema';
+import { connections, providerEvents, messages, conversations } from '@/db/schema';
 import { decrypt, verifySignature } from './security';
 import { HttpError } from './access';
 
@@ -17,6 +17,14 @@ const eventSchema = z.object({
           value: z
             .object({
               metadata: z.object({ phone_number_id: z.string() }),
+              contacts: z
+                .array(
+                  z.object({
+                    wa_id: z.string(),
+                    profile: z.object({ name: z.string() }).optional(),
+                  }),
+                )
+                .optional(),
               messages: z
                 .array(
                   z
@@ -33,7 +41,12 @@ const eventSchema = z.object({
               statuses: z
                 .array(
                   z
-                    .object({ id: z.string(), status: z.string(), timestamp: z.string() })
+                    .object({
+                      id: z.string(),
+                      status: z.string(),
+                      timestamp: z.string(),
+                      biz_opaque_callback_data: z.string().optional(),
+                    })
                     .passthrough(),
                 )
                 .optional(),
@@ -100,6 +113,28 @@ export async function ingestWebhook(raw: string, signature: string | null) {
             .onConflictDoNothing()
             .returning({ id: providerEvents.id });
           if (inserted.length) {
+            const contactName =
+              change.value.contacts
+                ?.find((c) => c.wa_id === message.from)
+                ?.profile?.name?.slice(0, 120) || message.from;
+            await tx
+              .insert(conversations)
+              .values({
+                id: randomUUID(),
+                agencyId: connection.agencyId,
+                connectionId: connection.id,
+                contactPhone: message.from,
+                name: contactName,
+                lastInboundAt: timestamp,
+                lastMessageAt: timestamp,
+              })
+              .onConflictDoUpdate({
+                target: [conversations.connectionId, conversations.contactPhone],
+                set: {
+                  lastInboundAt: sql`greatest(${conversations.lastInboundAt}, excluded.last_inbound_at)`,
+                  lastMessageAt: sql`greatest(${conversations.lastMessageAt}, excluded.last_message_at)`,
+                },
+              });
             await tx
               .insert(messages)
               .values({
@@ -129,6 +164,27 @@ export async function ingestWebhook(raw: string, signature: string | null) {
               payload: status,
             })
             .onConflictDoNothing();
+          const ranks: Record<string, number> = { sent: 2, failed: 3, delivered: 4, read: 5 };
+          const rank = ranks[status.status];
+          if (rank)
+            await tx
+              .update(messages)
+              .set({
+                providerMessageId: status.id,
+                deliveryStatus: sql`case when (case ${messages.deliveryStatus} when 'read' then 5 when 'delivered' then 4 when 'failed' then 3 when 'sent' then 2 else 0 end) < ${rank} then ${status.status} else ${messages.deliveryStatus} end`,
+              })
+              .where(
+                and(
+                  eq(messages.connectionId, connection.id),
+                  eq(messages.direction, 'outbound'),
+                  or(
+                    eq(messages.providerMessageId, status.id),
+                    status.biz_opaque_callback_data
+                      ? eq(messages.id, status.biz_opaque_callback_data)
+                      : undefined,
+                  ),
+                ),
+              );
         }
         await tx
           .update(connections)

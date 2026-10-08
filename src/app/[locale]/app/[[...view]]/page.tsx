@@ -13,7 +13,7 @@ export default async function Workspace({
   const section = view?.[0] || 'overview';
   if (
     (view?.length ?? 0) > 1 ||
-    !['overview', 'agencies', 'team', 'connections', 'settings'].includes(section)
+    !['overview', 'inbox', 'agencies', 'team', 'connections', 'settings'].includes(section)
   )
     notFound();
   const session = await getAuth().api.getSession({ headers: await headers() });

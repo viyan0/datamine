@@ -4,7 +4,7 @@ export async function GET() {
   try {
     await getPool().query('SELECT 1 FROM users LIMIT 1');
     return Response.json(
-      { status: 'ok', database: 'connected', phase: 1 },
+      { status: 'ok', database: 'connected', phase: 2 },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch {

@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
+import type { SavedAnalysis } from '@/lib/analysis-types';
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).defaultNow().notNull();
 export const user = pgTable('users', {
@@ -197,6 +198,9 @@ export const conversations = pgTable(
     destination: text('destination').default('').notNull(),
     inquiryStatus: text('inquiry_status').default('new').notNull(),
     note: text('note').default('').notNull(),
+    analysis: jsonb('analysis').$type<SavedAnalysis>(),
+    analysisRunId: text('analysis_run_id'),
+    analysisStartedAt: timestamp('analysis_started_at', { withTimezone: true }),
     lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }).notNull(),
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }).notNull(),
     createdAt: createdAt(),

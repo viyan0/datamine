@@ -45,6 +45,12 @@ Render background workers require a paid plan, so the free demo Blueprint does n
 
 No real Meta credentials were supplied during implementation. Provider verification, live webhook subscriptions, and real message routing cannot be claimed complete until these steps are performed. Phase 2 implements text replies within the customer-service window; a controlled real reply and delivery callback test remains pending. Templates are outside the demo.
 
+## Enable conversation analysis
+
+Add `ANTHROPIC_API_KEY` to the web service environment and retain `ANTHROPIC_MODEL=claude-haiku-5-5`. Do not prefix the key with `NEXT_PUBLIC_` or add it to Git. Redeploy or restart after setting the key. No worker or additional service is needed. The sample preview works without this key.
+
+Once configured, use a controlled text conversation, click **Analyze conversation**, and check the service labels, extracted quotes, summary language, and missing details. Repeat in English, Arabic, and Sorani. Confirm the saved result survives reload and that staff notes/status stay unchanged. This live model check remains pending; automated checks currently mock Anthropic.
+
 ## Operational notes
 
 - `/api/health` checks database connectivity and the migrated user table; it is not a claim that WhatsApp or AI is connected.

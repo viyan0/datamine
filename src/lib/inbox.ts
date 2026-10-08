@@ -31,7 +31,13 @@ export async function listConversations(agencyId: string): Promise<Conversation[
     .where(eq(conversations.agencyId, agencyId))
     .orderBy(desc(conversations.lastMessageAt));
   return rows.map(({ conversation: c, ...rest }) => ({
-    ...c,
+    id: c.id,
+    agencyId: c.agencyId,
+    connectionId: c.connectionId,
+    contactPhone: c.contactPhone,
+    name: c.name,
+    destination: c.destination,
+    note: c.note,
     ...rest,
     service: c.service as Conversation['service'],
     inquiryStatus: c.inquiryStatus as Conversation['inquiryStatus'],

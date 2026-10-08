@@ -1,6 +1,6 @@
 # Datamine
 
-A multilingual travel-agency demo built with Next.js, TypeScript, PostgreSQL, Drizzle, Better Auth, and next-intl. Phase 2 adds a simple agency inbox and customer records to the existing foundation.
+A multilingual travel-agency demo built with Next.js, TypeScript, PostgreSQL, Drizzle, Better Auth, and next-intl. Phase 3 adds one-click conversation analysis using Claude Haiku 5.5.
 
 ## Available in the demo
 
@@ -16,7 +16,17 @@ A multilingual travel-agency demo built with Next.js, TypeScript, PostgreSQL, Dr
 - An **interactive sample inbox** at `/en/demo/inbox`, `/ar/demo/inbox`, and `/ckb/demo/inbox`. Replies are simulated and edits reset on leaving the inbox; sample records never reach Meta or the database.
 - An optional pg-boss worker for connection health. The inbox needs no worker or new infrastructure.
 
-Haiku analysis, shared enrollment, and campaigns remain later phases. The planned model is **`claude-haiku-5-5`**. Delivery states come from Meta callbacks, never AI. Assignments, reminders, multiple trips per customer, media previews, templates, and automatic replies are deliberately outside this simple demo.
+Shared enrollment and campaigns remain later phases. Delivery states come from Meta callbacks, never AI. Assignments, reminders, multiple trips per customer, media previews, templates, and automatic replies are deliberately outside this simple demo.
+
+## Simple AI analysis
+
+Open a conversation and click **Analyze conversation**. A single server-side Anthropic Messages request uses **`claude-haiku-5-5`**, low effort, disabled thinking, and [structured JSON output](https://platform.claude.com/docs/en/build-with-claude/structured-outputs). There is no fallback model, tool use, automatic reply, or extra worker.
+
+The card shows service labels, request type, customer language, a short summary, departure/destination, dates as stated, travelers, budget, and a suggested next step. Unknown facts stay null. Extracted facts must reference an inbound message with a matching quote. Results are suggestions and never overwrite staff-entered customer details, notes, or inquiry status.
+
+Only up to 30 recent text messages are analyzed, capped at 16,000 characters total and 3,000 per message. Connection secrets, contact metadata, and private notes are excluded; text typed in messages is sent to Anthropic. Results, source IDs, model/schema version, timing, and token usage are saved in PostgreSQL. Unchanged input reuses the saved result. A short database lease prevents concurrent requests; changed source text invalidates in-flight results. Failures preserve the previous analysis and leave the inbox usable.
+
+Set `ANTHROPIC_API_KEY` on the server to enable real analysis. Without it, a setup message appears. Public sample inboxes offer **Try sample analysis**, which displays prepared localized examples without calling Anthropic. These fixtures do not analyze added demo replies and do not demonstrate measured model accuracy.
 
 Replies are saved before a direct Meta request. A unique request ID prevents repeated submissions; a lost response is marked uncertain and is not retried automatically. Signed callbacks can reconcile it, and delayed events cannot move read/delivered messages backward. Text replies require a customer message within the last 24 hours, following [WhatsApp's messaging policy](https://business.whatsapp.com/policy). Outside that window, this demo waits for another customer message.
 
@@ -35,7 +45,8 @@ Use Node.js 24 and npm. Install dependencies with `npm ci`. Copy `.env.example` 
 | `BOOTSTRAP_ADMIN_PASSWORD` | Strong initial password; at least 12 characters |
 | `BOOTSTRAP_ADMIN_NAME` | Initial owner's display name |
 | `META_GRAPH_VERSION` | Supported Meta Graph version, default `v23.0` |
-| `ANTHROPIC_MODEL` | `claude-haiku-5-5`, reserved for Phase 3 |
+| `ANTHROPIC_MODEL` | `claude-haiku-5-5`; other model values disable analysis |
+| `ANTHROPIC_API_KEY` | Server-only Anthropic key with access to Haiku 5.5; optional for the sample demo |
 
 Generate secrets locally with Node's `crypto.randomBytes(32).toString('hex')`. Store them in your environment or password manager.
 
@@ -64,7 +75,7 @@ With the locally built app running against the isolated local socket database, r
 node --env-file=.env.local --import tsx scripts/smoke.ts
 ```
 
-This exercises login, invitations, agency isolation, three locales, signed webhooks, customer edits, viewer restrictions, duplicate reply requests, expired reply windows, out-of-order delivery callbacks, uncertain-send reconciliation, and CSRF protection. All Meta sends are mocked. It creates test fixtures and **refuses to run against a remote deployment**. Production health is checked separately through `/api/health`.
+This exercises login, invitations, agency isolation, three locales, signed webhooks, customer edits, reply/delivery safeguards, AI persistence and cache reuse, invalid evidence, concurrent analysis, stale results, and unchanged staff fields. Meta and Anthropic requests are mocked. It creates test fixtures and **refuses to run against a remote deployment**. Production health is checked separately through `/api/health`.
 
 ## Deployment
 

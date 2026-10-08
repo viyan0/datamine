@@ -1,4 +1,4 @@
-name: Phase 1 checks
+name: Datamine checks
 on:
   push:
     branches: [main]

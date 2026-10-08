@@ -3,6 +3,7 @@ import { randomUUID, createHmac } from 'node:crypto';
 import { getPool } from '../src/db/index';
 import { encrypt } from '../src/lib/security';
 import { replyToConversation } from '../src/lib/inbox';
+import { analyzeConversation, getAnalysisState } from '../src/lib/analysis';
 const base = process.env.BETTER_AUTH_URL || 'http://localhost:3000';
 if (
   new URL(base).hostname !== 'localhost' ||
@@ -365,6 +366,146 @@ try {
   } finally {
     globalThis.fetch = originalFetch;
   }
+  assert.equal((await req(`${threadPath}/analysis`, 'GET', undefined, viewer)).status, 200);
+  assert.equal((await req(`${threadPath}/analysis`, 'POST', { locale: 'en' }, viewer)).status, 403);
+  assert.equal(
+    (
+      await req(
+        `/api/agencies/${b.data.id}/conversations/${thread.id}/analysis`,
+        'GET',
+        undefined,
+        owner,
+      )
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await req(
+        `/api/agencies/${b.data.id}/conversations/${thread.id}/analysis`,
+        'POST',
+        { locale: 'en' },
+        viewer,
+      )
+    ).status,
+    403,
+  );
+  const originalKey = process.env.ANTHROPIC_API_KEY,
+    originalModel = process.env.ANTHROPIC_MODEL;
+  process.env.ANTHROPIC_API_KEY = 'local-test-only';
+  process.env.ANTHROPIC_MODEL = 'claude-haiku-5-5';
+  const evidenceId = randomUUID();
+  const evidenceText = 'Two travelers need a flight and visa to Istanbul next Friday.';
+  await pool.query(
+    "INSERT INTO messages(id,agency_id,connection_id,provider_message_id,direction,contact_phone,type,body,provider_timestamp) VALUES($1,$2,$3,$4,'inbound',$5,'text',$6,now())",
+    [evidenceId, a.data.id, idA, `wamid.ai-${suffix}`, thread.contactPhone, evidenceText],
+  );
+  let aiCalls = 0,
+    invalid = false;
+  let hold: Promise<void> | null = null;
+  let entered: (() => void) | null = null;
+  globalThis.fetch = async (input, init) => {
+    if (String(input) !== 'https://api.anthropic.com/v1/messages')
+      return originalFetch(input, init);
+    aiCalls++;
+    const payload = JSON.parse(String(init?.body));
+    const serialized = payload.messages[0].content;
+    assert.ok(serialized.includes(evidenceText));
+    assert.ok(!serialized.includes(fields.note));
+    assert.ok(!serialized.includes(thread.contactPhone));
+    assert.ok(!serialized.includes(`Private for ${idB}`));
+    entered?.();
+    if (hold) await hold;
+    return Response.json({
+      stop_reason: 'end_turn',
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            language: 'en',
+            services: ['flight', 'visa'],
+            intent: 'availability',
+            summary: 'Two travelers need a flight and visa to Istanbul.',
+            nextStep: 'Confirm travel dates.',
+            reviewNote: 'The exact date and year need confirmation.',
+            facts: {
+              departure: null,
+              destination: {
+                value: 'Istanbul',
+                quote: invalid ? 'invented quote' : 'Istanbul',
+                messageId: evidenceId,
+              },
+              travelDates: { value: 'next Friday', quote: 'next Friday', messageId: evidenceId },
+              travelers: { value: 'Two', quote: 'Two travelers', messageId: evidenceId },
+              budget: null,
+            },
+          }),
+        },
+      ],
+      usage: { input_tokens: 200, output_tokens: 150 },
+    });
+  };
+  try {
+    const analysis = await analyzeConversation(a.data.id, thread.id, 'en');
+    assert.equal(analysis.model, 'claude-haiku-5-5');
+    assert.deepEqual(analysis.result.services, ['flight', 'visa']);
+    await analyzeConversation(a.data.id, thread.id, 'en');
+    assert.equal(aiCalls, 1, 'Unchanged inputs reuse the saved analysis');
+    const persisted = await req(`${threadPath}/analysis`, 'GET', undefined, viewer);
+    assert.equal(persisted.data.analysis.result.facts.destination.value, 'Istanbul');
+    assert.equal(persisted.data.stale, false);
+    assert.equal(
+      (await req(`${threadPath}/analysis`, 'POST', { locale: 'en' }, owner)).status,
+      200,
+    );
+    invalid = true;
+    await assert.rejects(analyzeConversation(a.data.id, thread.id, 'ar'), {
+      code: 'analysisInvalid',
+    });
+    assert.equal(
+      (await getAnalysisState(a.data.id, thread.id)).analysis?.sourceHash,
+      analysis.sourceHash,
+    );
+    invalid = false;
+    let release!: () => void;
+    hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const running = analyzeConversation(a.data.id, thread.id, 'ar');
+    await started;
+    await assert.rejects(analyzeConversation(a.data.id, thread.id, 'ckb'), {
+      code: 'analysisBusy',
+    });
+    await pool.query('UPDATE messages SET body=$1 WHERE id=$2', [
+      'Correction: three travelers, not two.',
+      evidenceId,
+    ]);
+    release();
+    await assert.rejects(running, { code: 'analysisChanged' });
+    assert.equal((await getAnalysisState(a.data.id, thread.id)).stale, true);
+    const unchanged = await req(
+      `/api/agencies/${a.data.id}/conversations`,
+      'GET',
+      undefined,
+      owner,
+    );
+    assert.equal(unchanged.data.conversations[0].note, fields.note);
+    assert.equal(unchanged.data.conversations[0].inquiryStatus, fields.inquiryStatus);
+    delete process.env.ANTHROPIC_API_KEY;
+    await assert.rejects(analyzeConversation(a.data.id, thread.id, 'ckb'), {
+      code: 'analysisNotConfigured',
+    });
+    assert.equal(aiCalls, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalKey;
+    if (originalModel === undefined) delete process.env.ANTHROPIC_MODEL;
+    else process.env.ANTHROPIC_MODEL = originalModel;
+  }
   const foreign = await fetch(base + '/api/agencies', {
     method: 'POST',
     headers: {
@@ -376,7 +517,7 @@ try {
   });
   assert.equal(foreign.status, 403);
   console.log(
-    'PASS: auth, three locales, agency isolation, customer edits, viewer restrictions, signed webhook routing, duplicate sends, reply window, out-of-order delivery, timeout reconciliation, and cross-origin protection. Meta sends were mocked; no real messages sent.',
+    'PASS: auth, locales, agency isolation, inbox edits, delivery tracking, AI persistence/cache, evidence validation, concurrent analysis, stale results, and unchanged staff fields. Meta and Anthropic were mocked; no external messages or AI requests were sent.',
   );
 } finally {
   await pool.end();

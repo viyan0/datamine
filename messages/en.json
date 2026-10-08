@@ -93,7 +93,7 @@
   "securityTitle": "Private by design",
   "securityText": "Staff only see agencies they belong to. WhatsApp credentials are encrypted, and incoming events require a valid Meta signature.",
   "phaseScope": "What’s available in this demo",
-  "scopeText": "Agency workspaces, team access, WhatsApp inboxes, text replies, customer details, inquiry status, and private notes. AI and campaigns come later.",
+  "scopeText": "Agency workspaces, WhatsApp inboxes, replies, customer details, private notes, and one-click travel analysis. Enrollment and campaigns come later.",
   "signOut": "Sign out",
   "demo": "Sample workspace",
   "demoNotice": "You’re exploring sample data. Try the inbox, or sign in for your real agencies.",
@@ -160,7 +160,14 @@
     "signInFirst": "An account already exists for this invitation. Sign in with that account, then reopen the invitation.",
     "notFound": "This conversation is no longer available.",
     "replyWindowClosed": "The reply window has ended. Wait for a new customer message.",
-    "requestConflict": "This reply request has already been used. Refresh the conversation."
+    "requestConflict": "This reply request has already been used. Refresh the conversation.",
+    "analysisNotConfigured": "Ask your administrator to configure an Anthropic API key with access to Claude Haiku 5.5.",
+    "analysisUnavailable": "Analysis could not finish. Try again later; your messages are still available.",
+    "analysisInvalid": "The AI response could not be verified. The previous analysis was kept.",
+    "analysisRateLimited": "The AI service is busy. Try again shortly.",
+    "analysisNoText": "There are no recent customer text messages to analyze.",
+    "analysisBusy": "This conversation is already being analyzed. Refresh shortly.",
+    "analysisChanged": "New messages arrived during analysis. Analyze again to include them."
   },
   "networkLabel": "THE DATAMINE NETWORK",
   "agencyCount": "{count} agencies, one connected workspace",
@@ -252,5 +259,71 @@
   },
   "phaseTwo": "Phase 02 · Inbox & customers",
   "inboxTitle": "Good conversations. Great journeys.",
-  "inboxSub": "Read, reply, and keep the travel details together."
+  "inboxSub": "Read, reply, and keep the travel details together.",
+  "phaseThree": "Phase 03 · Travel insights",
+  "ai": {
+    "title": "Travel insights",
+    "analyze": "Analyze conversation",
+    "refresh": "Update analysis",
+    "preview": "Try sample analysis",
+    "analyzing": "Analyzing…",
+    "ready": "Analysis ready",
+    "hint": "A quick summary of recent text messages, powered by Claude Haiku.",
+    "demoHint": "Preview a prepared analysis of the original sample conversation.",
+    "setup": "AI is not connected yet. Your administrator can enable it with an Anthropic API key.",
+    "stale": "This analysis needs updating for the latest messages or selected language.",
+    "travelDetails": "Travel details & next step",
+    "unknown": "Not stated",
+    "departure": "Departure",
+    "destination": "Destination",
+    "travelDates": "Travel dates",
+    "travelers": "Travelers",
+    "budget": "Budget",
+    "language": "Customer language",
+    "nextStep": "Suggested next step",
+    "sources": "View supporting messages",
+    "sampleResult": "Prepared sample · no AI request was made. Added demo replies are not analyzed.",
+    "reviewHint": "Review against the messages. Customer details and inquiry status stay under your control.",
+    "intents": {
+      "price": "Price inquiry",
+      "availability": "Availability inquiry",
+      "booking": "Booking request",
+      "change": "Change request",
+      "cancellation": "Cancellation request",
+      "support": "Support",
+      "greeting": "Greeting",
+      "other": "Other",
+      "unclear": "Needs clarification"
+    },
+    "languages": {
+      "en": "English",
+      "ar": "Arabic",
+      "ckb": "Sorani Kurdish",
+      "mixed": "Mixed",
+      "other": "Other",
+      "unknown": "Unknown"
+    },
+    "samples": {
+      "ava": {
+        "summary": "The customer wants two return tickets from Erbil to Istanbul for October 22–28, with a morning departure.",
+        "nextStep": "Check morning flight options and confirm the travel year.",
+        "reviewNote": "The travel year and budget were not stated."
+      },
+      "rebaz": {
+        "summary": "The customer asks which documents are required for a Dubai tourist visa.",
+        "nextStep": "Clarify their circumstances before sharing the relevant requirements.",
+        "reviewNote": "Travel dates and traveler count were not stated."
+      },
+      "noor": {
+        "summary": "The customer will confirm travel dates with their family.",
+        "nextStep": "Wait for the customer to confirm the dates.",
+        "reviewNote": "The available message does not specify a service or destination."
+      },
+      "dilan": {
+        "summary": "The customer asks whether travel packages to Istanbul are available.",
+        "nextStep": "Ask for their preferred dates and number of travelers.",
+        "reviewNote": "Dates, departure city, and budget were not stated."
+      }
+    }
+  }
 }

@@ -204,10 +204,7 @@ export function Dashboard({
         </nav>
         <p className="nav-label future-label">{t('comingNext')}</p>
         <div className="future-nav">
-          {[
-            { key: 'intelligence', icon: Sparkles },
-            { key: 'campaigns', icon: Megaphone },
-          ].map(({ key, icon: Icon }) => (
+          {[{ key: 'campaigns', icon: Megaphone }].map(({ key, icon: Icon }) => (
             <div key={key}>
               <Icon size={17} />
               <span>{t(key)}</span>
@@ -218,7 +215,7 @@ export function Dashboard({
         <div className="sidebar-bottom">
           <div className="phase-card">
             <span className="phase-dot" />
-            <strong>{t('phaseTwo')}</strong>
+            <strong>{t('phaseThree')}</strong>
             <p>{t('phaseCaption')}</p>
             <div className="phase-track">
               <span />
@@ -263,7 +260,7 @@ export function Dashboard({
           <div className="topbar-right">
             <span className="pilot-tag">
               <span className="small-dot" />
-              {t('phaseTwo')}
+              {t('phaseThree')}
             </span>
             <LanguageSwitch />
           </div>
@@ -637,7 +634,7 @@ export function Dashboard({
             <span>
               Datamine <span>✦</span> {t('brandTag')}
             </span>
-            <span>{t('phaseTwo')}</span>
+            <span>{t('phaseThree')}</span>
           </footer>
         </main>
       </div>

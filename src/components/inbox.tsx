@@ -24,6 +24,7 @@ import {
   type InboxMessage,
 } from '@/lib/inbox-types';
 import { Button } from './ui/button';
+import { ConversationAnalysis } from './conversation-analysis';
 
 async function api(url: string, init?: RequestInit) {
   const response = await fetch(url, {
@@ -357,6 +358,14 @@ function ConversationView({
             <UserRound size={19} />
           </button>
         </header>
+        <ConversationAnalysis
+          id={c.id}
+          url={url}
+          demo={demo}
+          editable={editable}
+          revision={revision}
+          lastMessageAt={c.lastMessageAt}
+        />
         <div className="conversation-messages" aria-label={t('messageHistory')}>
           <p className="history-caption">{t(demo ? 'sampleConversation' : 'recentMessages')}</p>
           {loading && <p className="history-caption">{t('loading')}</p>}

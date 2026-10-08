@@ -61,7 +61,7 @@ For this demo, use the existing **leadstest** Meta app (`1088621117427847`) in t
 4. Send a controlled test text to each real number. The connection changes from **Credentials verified** to **Receiving events** only after a valid, signed callback. Inspect received messages and confirm agency routing.
 5. Replay a webhook and confirm the stored message count does not increase.
 
-No real Meta credentials were supplied during implementation. Provider verification, live webhook subscriptions, and real message routing cannot be claimed complete until these steps are performed. Phase 2 implements text replies within the customer-service window; a controlled real reply and delivery callback test remains pending. Phase 5 supports static approved marketing templates from a selected central Datamine sender.
+Provider verification and webhook processing are covered by mocked automated tests. The deployed test sender, live webhook, and a real incoming/outgoing WhatsApp conversation have also been verified; see DELIVERY.md for current live results and remaining pilot checks. Text replies use the customer-service window. Campaigns support static approved marketing templates from the selected central Datamine sender.
 
 ## Enable conversation analysis
 

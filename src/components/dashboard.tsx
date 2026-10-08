@@ -38,6 +38,7 @@ import { Dialog } from './dialog';
 import { authClient } from '@/lib/auth-client';
 import { CustomerDirectory } from './customer-directory';
 import { BusinessSettings } from './business-settings';
+import { Campaigns } from './campaigns';
 import { AgencyInbox } from './inbox';
 
 const languageNames: Record<string, string> = { en: 'English', ar: 'العربية', ckb: 'کوردی' };
@@ -45,6 +46,7 @@ const nav = [
   { key: 'overview', icon: LayoutGrid },
   { key: 'inbox', icon: Inbox },
   { key: 'customers', icon: Users },
+  { key: 'campaigns', icon: Megaphone },
   { key: 'agencies', icon: Building2 },
   { key: 'team', icon: Users },
   { key: 'connections', icon: MessageCircle },
@@ -100,6 +102,7 @@ export function Dashboard({
     overview: ['welcome', 'welcomeSub'],
     inbox: ['inboxTitle', 'inboxSub'],
     customers: ['customersTitle', 'customersSub'],
+    campaigns: ['campaignsTitle', 'campaignsSub'],
     agencies: ['agenciesTitle', 'agenciesSub'],
     team: ['teamTitle', 'teamSub'],
     connections: ['connectionTitle', 'connectionSub'],
@@ -208,20 +211,10 @@ export function Dashboard({
               </Link>
             ))}
         </nav>
-        <p className="nav-label future-label">{t('comingNext')}</p>
-        <div className="future-nav">
-          {[{ key: 'campaigns', icon: Megaphone }].map(({ key, icon: Icon }) => (
-            <div key={key}>
-              <Icon size={17} />
-              <span>{t(key)}</span>
-              <LockKeyhole size={12} />
-            </div>
-          ))}
-        </div>
         <div className="sidebar-bottom">
           <div className="phase-card">
             <span className="phase-dot" />
-            <strong>{t('phaseFour')}</strong>
+            <strong>{t('phaseFive')}</strong>
             <p>{t('phaseCaption')}</p>
             <div className="phase-track">
               <span />
@@ -266,7 +259,7 @@ export function Dashboard({
           <div className="topbar-right">
             <span className="pilot-tag">
               <span className="small-dot" />
-              {t('phaseFour')}
+              {t('phaseFive')}
             </span>
             <LanguageSwitch />
           </div>
@@ -322,6 +315,7 @@ export function Dashboard({
               </button>
             </div>
           )}
+          {section === 'campaigns' && <Campaigns data={data} demo={demo} />}
           {section === 'customers' && data.user.platformAdmin && <CustomerDirectory demo={demo} />}
           {section === 'inbox' && <AgencyInbox data={data} demo={demo} />}
           {section === 'overview' && (
@@ -642,7 +636,7 @@ export function Dashboard({
             <span>
               Datamine <span>✦</span> {t('brandTag')}
             </span>
-            <span>{t('phaseFour')}</span>
+            <span>{t('phaseFive')}</span>
           </footer>
         </main>
       </div>

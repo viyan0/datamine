@@ -1,29 +1,19 @@
 export const analysisModel = 'claude-haiku-5-5';
-export const analysisVersion = 2;
-export const analysisIntents = [
-  'price',
-  'availability',
-  'booking',
-  'order',
-  'change',
-  'cancellation',
-  'support',
-  'greeting',
-  'other',
-  'unclear',
-] as const;
+export const analysisVersion = 3;
 export const analysisLanguages = ['en', 'ar', 'ckb', 'mixed', 'other', 'unknown'] as const;
-export const factNames = ['request', 'location', 'date', 'quantity', 'budget'] as const;
 export type SourceMessage = { id: string; direction: string; body: string; timestamp: string };
 export type CustomerFact = { value: string; messageId: string; quote: string } | null;
 export type AnalysisResult = {
   language: (typeof analysisLanguages)[number];
   services: string[];
-  intent: (typeof analysisIntents)[number];
+  intent: string;
+  inquiryStatus: 'new' | 'inProgress' | 'closed';
   summary: string;
   nextStep: string;
   reviewNote: string | null;
-  facts: Record<(typeof factNames)[number], CustomerFact>;
+  subject: CustomerFact;
+  facts: { label: string; value: string; messageId: string; quote: string }[];
+  stopOffers: CustomerFact;
 };
 export type SavedAnalysis = {
   result: AnalysisResult;
@@ -37,4 +27,10 @@ export type SavedAnalysis = {
   outputTokens: number;
   latencyMs: number;
 };
-export type AnalysisState = { analysis: SavedAnalysis | null; stale: boolean; configured: boolean };
+export type AnalysisState = {
+  analysis: SavedAnalysis | null;
+  stale: boolean;
+  configured: boolean;
+  status: string;
+  error: string | null;
+};

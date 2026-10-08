@@ -1,7 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { agencies, conversations, messages } from '@/db/schema';
+import {
+  agencies,
+  connections,
+  conversations,
+  messages,
+  sharedProfiles,
+  profileEvents,
+  campaigns,
+} from '@/db/schema';
 import type { BusinessContext } from './business';
 import { getConversation } from './inbox';
 import {
@@ -62,6 +70,8 @@ export async function getAnalysisState(agencyId: string, id: string) {
   return {
     analysis: c.analysis?.version === analysisVersion ? c.analysis : null,
     configured: analysisConfigured(),
+    status: c.analysisStatus,
+    error: c.analysisError,
     stale:
       !!c.analysis &&
       c.analysis.sourceHash !==
@@ -75,13 +85,24 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
     throw new AnalysisError('analysisNoText', 422);
   const business = await businessContext(agencyId);
   const sourceHash = fingerprint(source, locale, business);
-  if (c.analysis?.sourceHash === sourceHash) return c.analysis;
+  if (c.analysis?.sourceHash === sourceHash) {
+    await getDb()
+      .update(conversations)
+      .set({ analysisStatus: 'complete', analysisDueAt: null, analysisError: null })
+      .where(and(eq(conversations.id, id), eq(conversations.analysisRevision, c.analysisRevision)));
+    return c.analysis;
+  }
   if (!analysisConfigured()) throw new AnalysisError('analysisNotConfigured', 503);
   const db = getDb(),
     runId = randomUUID();
   const [claimed] = await db
     .update(conversations)
-    .set({ analysisRunId: runId, analysisStartedAt: new Date() })
+    .set({
+      analysisRunId: runId,
+      analysisStartedAt: new Date(),
+      analysisStatus: 'processing',
+      analysisAttempts: sql`${conversations.analysisAttempts} + 1`,
+    })
     .where(
       and(
         eq(conversations.id, id),
@@ -95,7 +116,17 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
     .returning({ id: conversations.id });
   if (!claimed) throw new AnalysisError('analysisBusy', 409);
   try {
-    const output = await analyzeWithHaiku(source, locale, business);
+    const known = await db
+      .selectDistinct({ category: conversations.service })
+      .from(conversations)
+      .where(eq(conversations.agencyId, agencyId))
+      .limit(50);
+    const output = await analyzeWithHaiku(
+      source,
+      locale,
+      business,
+      known.map((r) => r.category).filter((v) => v !== 'other'),
+    );
     if (
       fingerprint(await sourceMessages(c), locale, await businessContext(agencyId)) !== sourceHash
     )
@@ -109,12 +140,76 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
       createdAt: new Date().toISOString(),
       sourceMessageIds: source.map((m) => m.id),
     };
-    const [saved] = await db
-      .update(conversations)
-      .set({ analysis })
-      .where(and(eq(conversations.id, id), eq(conversations.analysisRunId, runId)))
-      .returning({ id: conversations.id });
-    if (!saved) throw new AnalysisError('analysisChanged', 409);
+    await db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(conversations)
+        .where(and(eq(conversations.id, id), eq(conversations.analysisRunId, runId)))
+        .for('update');
+      if (!current || current.analysisRevision !== c.analysisRevision)
+        throw new AnalysisError('analysisChanged', 409);
+      await tx
+        .update(conversations)
+        .set({
+          analysis,
+          analysisStatus: 'complete',
+          analysisError: null,
+          analysisDueAt: null,
+          analysisAttempts: 0,
+          ...(!current.manualFields.includes('service')
+            ? { service: analysis.result.services[0] || 'other' }
+            : {}),
+          ...(!current.manualFields.includes('destination')
+            ? { destination: analysis.result.subject?.value.slice(0, 160) || '' }
+            : {}),
+          ...(!current.manualFields.includes('inquiryStatus')
+            ? { inquiryStatus: analysis.result.inquiryStatus }
+            : {}),
+        })
+        .where(eq(conversations.id, id));
+      const [sender] = await tx
+        .select({
+          enabled: sql<boolean>`${connections.campaignSender} or exists (select 1 from ${campaigns} where ${campaigns.senderId}=${connections.id})`,
+        })
+        .from(connections)
+        .where(eq(connections.id, c.connectionId));
+      if (sender?.enabled) {
+        const [profile] = await tx
+          .select()
+          .from(sharedProfiles)
+          .where(eq(sharedProfiles.phone, c.contactPhone))
+          .for('update');
+        const [stopMessage] = analysis.result.stopOffers
+          ? await tx
+              .select({ createdAt: messages.createdAt })
+              .from(messages)
+              .where(eq(messages.id, analysis.result.stopOffers.messageId))
+          : [];
+        // A fresh explicit enrollment supersedes an earlier withdrawal in the history.
+        const optOut =
+          !!profile &&
+          profile.status === 'active' &&
+          !!stopMessage &&
+          stopMessage.createdAt >= profile.consentAt;
+        if (profile)
+          await tx
+            .update(sharedProfiles)
+            .set({
+              offerHold: false,
+              ...(optOut ? { status: 'optedOut', updatedAt: new Date() } : {}),
+            })
+            .where(eq(sharedProfiles.id, profile.id));
+        if (profile && optOut)
+          await tx.insert(profileEvents).values({
+            id: randomUUID(),
+            profileId: profile.id,
+            action: 'optedOut',
+            noticeVersion: profile.consentVersion,
+            locale,
+            channel: 'whatsapp',
+          });
+      }
+    });
     return analysis;
   } finally {
     await db
@@ -122,4 +217,66 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
       .set({ analysisRunId: null, analysisStartedAt: null })
       .where(and(eq(conversations.id, id), eq(conversations.analysisRunId, runId)));
   }
+}
+
+export async function processPendingAnalysis(limit = 3) {
+  if (!analysisConfigured()) return 0;
+  const db = getDb();
+  const due = await db
+    .select({
+      id: conversations.id,
+      agencyId: conversations.agencyId,
+      locale: agencies.locale,
+      revision: conversations.analysisRevision,
+    })
+    .from(conversations)
+    .innerJoin(agencies, eq(agencies.id, conversations.agencyId))
+    .where(
+      and(
+        lt(conversations.analysisDueAt, new Date()),
+        or(
+          isNull(conversations.analysisRunId),
+          lt(conversations.analysisStartedAt, new Date(Date.now() - 90000)),
+        ),
+      ),
+    )
+    .orderBy(conversations.analysisDueAt)
+    .limit(limit);
+  for (const item of due) {
+    try {
+      await analyzeConversation(item.agencyId, item.id, item.locale);
+    } catch (error) {
+      const code = error instanceof AnalysisError ? error.code : 'analysisUnavailable';
+      if (code === 'analysisBusy') continue;
+      const [current] = await db.select().from(conversations).where(eq(conversations.id, item.id));
+      const changed = code === 'analysisChanged' || current.analysisRevision !== item.revision;
+      await db
+        .update(conversations)
+        .set({
+          analysisStatus: changed
+            ? 'pending'
+            : code === 'analysisNoText'
+              ? 'waitingForText'
+              : 'error',
+          analysisError: changed ? null : code,
+          analysisDueAt:
+            code === 'analysisNoText' && !changed
+              ? null
+              : new Date(
+                  Date.now() +
+                    (changed
+                      ? 2000
+                      : Math.min(900000, 15000 * 2 ** Math.min(current.analysisAttempts, 6))),
+                ),
+        })
+        .where(
+          and(
+            eq(conversations.id, item.id),
+            isNull(conversations.analysisRunId),
+            eq(conversations.analysisRevision, current.analysisRevision),
+          ),
+        );
+    }
+  }
+  return due.length;
 }

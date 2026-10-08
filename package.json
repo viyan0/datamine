@@ -7,7 +7,7 @@
     "node": ">=22.14.0 <25"
   },
   "scripts": {
-    "dev": "next dev --hostname 0.0.0.0",
+    "dev": "node --env-file-if-exists=.env.local scripts/start.mjs --dev",
     "build": "next build",
     "start": "node scripts/start.mjs",
     "typecheck": "tsc --noEmit",
@@ -17,10 +17,12 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:bootstrap": "tsx scripts/bootstrap.ts",
     "worker": "tsx scripts/worker.ts",
+    "automation": "tsx scripts/automation.ts",
     "check": "npm run lint && npm run typecheck && npm test",
     "db:local": "tsx scripts/local-db.ts",
     "test:smoke": "node --env-file=.env.local --import tsx scripts/smoke.ts",
-    "validate:render": "node scripts/validate-blueprint.mjs"
+    "validate:render": "node scripts/validate-blueprint.mjs",
+    "test:smoke:automation": "node --env-file=.env.local --import tsx scripts/smoke-phase5.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.4.0",

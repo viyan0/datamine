@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import './inbox.css';
 @import './enrollment.css';
+@import './campaigns.css';
 @theme {
   --font-sans: 'Segoe UI', 'Tahoma', Arial, sans-serif;
 }

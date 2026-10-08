@@ -83,10 +83,7 @@ export const agencies = pgTable('agencies', {
   slug: text('slug').notNull().unique(),
   locale: text('locale').default('en').notNull(),
   industry: text('industry').default('General business').notNull(),
-  categories: jsonb('categories')
-    .$type<string[]>()
-    .default(['general', 'sales', 'support', 'booking'])
-    .notNull(),
+  categories: jsonb('categories').$type<string[]>().default([]).notNull(),
   createdAt: createdAt(),
 });
 export const memberships = pgTable(
@@ -138,6 +135,7 @@ export const connections = pgTable(
     status: text('status').default('configured').notNull(),
     lastWebhookAt: timestamp('last_webhook_at', { withTimezone: true }),
     verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    campaignSender: boolean('campaign_sender').default(false).notNull(),
     createdAt: createdAt(),
   },
   (t) => [index('connection_agency_idx').on(t.agencyId)],
@@ -206,6 +204,12 @@ export const conversations = pgTable(
     analysis: jsonb('analysis').$type<SavedAnalysis>(),
     analysisRunId: text('analysis_run_id'),
     analysisStartedAt: timestamp('analysis_started_at', { withTimezone: true }),
+    analysisDueAt: timestamp('analysis_due_at', { withTimezone: true }).defaultNow(),
+    analysisStatus: text('analysis_status').default('pending').notNull(),
+    analysisError: text('analysis_error'),
+    analysisAttempts: integer('analysis_attempts').default(0).notNull(),
+    analysisRevision: integer('analysis_revision').default(0).notNull(),
+    manualFields: jsonb('manual_fields').$type<string[]>().default([]).notNull(),
     lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }).notNull(),
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }).notNull(),
     createdAt: createdAt(),
@@ -248,6 +252,7 @@ export const sharedProfiles = pgTable('shared_profiles', {
   destination: text('destination').default('').notNull(),
   interests: jsonb('interests').$type<string[]>().notNull().default([]),
   status: text('status').default('active').notNull(),
+  offerHold: boolean('offer_hold').default(false).notNull(),
   consentVersion: text('consent_version').notNull(),
   consentAt: timestamp('consent_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -263,3 +268,48 @@ export const profileEvents = pgTable('profile_events', {
   channel: text('channel').default('customer_portal').notNull(),
   createdAt: createdAt(),
 });
+export const campaigns = pgTable('campaigns', {
+  id: text('id').primaryKey(),
+  agencyId: text('agency_id')
+    .notNull()
+    .references(() => agencies.id),
+  createdBy: text('created_by')
+    .notNull()
+    .references(() => user.id),
+  title: text('title').notNull(),
+  offerText: text('offer_text').notNull(),
+  locale: text('locale').notNull(),
+  status: text('status').default('matching').notNull(),
+  senderId: text('sender_id').references(() => connections.id),
+  template: jsonb('template').$type<{ id: string; name: string; language: string; body: string }>(),
+  analysis: jsonb('analysis').$type<{
+    summary: string;
+    categories: string[];
+    model: string;
+    sourceHash: string;
+  }>(),
+  dueAt: timestamp('due_at', { withTimezone: true }).defaultNow(),
+  runId: text('run_id'),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  attempts: integer('attempts').default(0).notNull(),
+  error: text('error'),
+  createdAt: createdAt(),
+});
+export const campaignRecipients = pgTable(
+  'campaign_recipients',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id')
+      .notNull()
+      .references(() => campaigns.id),
+    profileId: text('profile_id')
+      .notNull()
+      .references(() => sharedProfiles.id),
+    profileUpdatedAt: timestamp('profile_updated_at', { withTimezone: true }).notNull(),
+    reason: text('reason').notNull(),
+    status: text('status').default('matched').notNull(),
+    messageId: text('message_id').references(() => messages.id),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  },
+  (t) => [uniqueIndex('campaign_recipient_unique').on(t.campaignId, t.profileId)],
+);

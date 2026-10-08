@@ -433,20 +433,22 @@ try {
             language: 'en',
             services: ['flight', 'visa'],
             intent: 'availability',
+            inquiryStatus: 'new',
+            subject: null,
+            stopOffers: null,
             summary: 'Two travelers need a flight and visa to Istanbul.',
             nextStep: 'Confirm travel dates.',
             reviewNote: 'The exact date and year need confirmation.',
-            facts: {
-              request: null,
-              location: {
+            facts: [
+              {
+                label: 'location',
                 value: 'Istanbul',
                 quote: invalid ? 'invented quote' : 'Istanbul',
                 messageId: evidenceId,
               },
-              date: { value: 'next Friday', quote: 'next Friday', messageId: evidenceId },
-              quantity: { value: 'Two', quote: 'Two travelers', messageId: evidenceId },
-              budget: null,
-            },
+              { label: 'date', value: 'next Friday', quote: 'next Friday', messageId: evidenceId },
+              { label: 'quantity', value: 'Two', quote: 'Two travelers', messageId: evidenceId },
+            ],
           }),
         },
       ],
@@ -460,7 +462,11 @@ try {
     await analyzeConversation(a.data.id, thread.id, 'en');
     assert.equal(aiCalls, 1, 'Unchanged inputs reuse the saved analysis');
     const persisted = await req(`${threadPath}/analysis`, 'GET', undefined, viewer);
-    assert.equal(persisted.data.analysis.result.facts.location.value, 'Istanbul');
+    assert.equal(
+      persisted.data.analysis.result.facts.find((f: { label: string }) => f.label === 'location')
+        .value,
+      'Istanbul',
+    );
     assert.equal(persisted.data.stale, false);
     assert.equal(
       (
@@ -584,14 +590,8 @@ try {
     200,
   );
   assert.equal(
-    (
-      await req(
-        `/api/agencies/${b.data.id}`,
-        'PATCH',
-        { industry: 'Furniture', categories: [] },
-        owner,
-      )
-    ).status,
+    (await req(`/api/agencies/${b.data.id}`, 'PATCH', { industry: '', categories: [] }, owner))
+      .status,
     400,
   );
   const phone = `964${Date.now().toString().slice(-10)}`;

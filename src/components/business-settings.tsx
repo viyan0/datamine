@@ -90,12 +90,7 @@ function BusinessForm({
       </label>
       <label>
         {t('categoriesLabel')}
-        <input
-          name="categories"
-          defaultValue={business.categories.join(', ')}
-          maxLength={720}
-          required
-        />
+        <input name="categories" defaultValue={business.categories.join(', ')} maxLength={720} />
       </label>
       <p className="form-hint">{t('categoriesHint')}</p>
       <Button disabled={busy}>{t(busy ? 'loading' : 'save')}</Button>

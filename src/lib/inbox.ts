@@ -38,6 +38,8 @@ export async function listConversations(agencyId: string): Promise<Conversation[
     name: c.name,
     destination: c.destination,
     note: c.note,
+    manualFields: c.manualFields,
+    categories: c.analysis?.version === 3 ? c.analysis.result.services : [],
     ...rest,
     service: c.service as Conversation['service'],
     inquiryStatus: c.inquiryStatus as Conversation['inquiryStatus'],
@@ -142,5 +144,16 @@ export async function replyToConversation(
     })
     .where(eq(messages.id, pending.id));
   const [saved] = await db.select().from(messages).where(eq(messages.id, pending.id));
+  if (['accepted', 'sent', 'delivered', 'read'].includes(saved.deliveryStatus))
+    await db
+      .update(conversations)
+      .set({
+        analysisDueAt: new Date(Date.now() + 2000),
+        analysisStatus: 'pending',
+        analysisError: null,
+        analysisAttempts: 0,
+        analysisRevision: sql`${conversations.analysisRevision} + 1`,
+      })
+      .where(eq(conversations.id, id));
   return serializeMessage(saved);
 }

@@ -1,10 +1,10 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
 import { conversations } from '@/db/schema';
 import { requireAgency, HttpError } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
-import { conversationMessages, getConversation } from '@/lib/inbox';
+import { conversationMessages } from '@/lib/inbox';
 import { inquiryStatuses } from '@/lib/inbox-types';
 import { categorySchema } from '@/lib/business';
 type Context = { params: Promise<{ id: string; conversationId: string }> };
@@ -27,7 +27,24 @@ export async function PATCH(request: Request, { params }: Context) {
     const { membership } = await requireAgency(id);
     if (!['owner', 'admin', 'agent'].includes(membership.role))
       throw new HttpError(403, 'forbidden');
-    await getConversation(id, conversationId);
+    const input = await bodyJson(request);
+    const reset = z.object({ automatic: z.literal(true) }).safeParse(input);
+    if (reset.success) {
+      const [row] = await getDb()
+        .update(conversations)
+        .set({
+          manualFields: [],
+          analysis: null,
+          analysisStatus: 'pending',
+          analysisDueAt: new Date(),
+          analysisAttempts: 0,
+          analysisRevision: sql`${conversations.analysisRevision} + 1`,
+        })
+        .where(and(eq(conversations.id, conversationId), eq(conversations.agencyId, id)))
+        .returning({ id: conversations.id });
+      if (!row) throw new HttpError(404, 'notFound');
+      return Response.json({ ok: true });
+    }
     const fields = z
       .object({
         name: z.string().trim().min(1).max(120),
@@ -36,11 +53,23 @@ export async function PATCH(request: Request, { params }: Context) {
         inquiryStatus: z.enum(inquiryStatuses),
         note: z.string().trim().max(2000),
       })
-      .parse(await bodyJson(request));
-    await getDb()
-      .update(conversations)
-      .set(fields)
-      .where(and(eq(conversations.id, conversationId), eq(conversations.agencyId, id)));
+      .partial()
+      .parse(input);
+    await getDb().transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(conversations)
+        .where(and(eq(conversations.id, conversationId), eq(conversations.agencyId, id)))
+        .for('update');
+      if (!current) throw new HttpError(404, 'notFound');
+      const changed = (['service', 'destination', 'inquiryStatus'] as const).filter(
+        (field) => fields[field] !== undefined && current[field] !== fields[field],
+      );
+      await tx
+        .update(conversations)
+        .set({ ...fields, manualFields: [...new Set([...current.manualFields, ...changed])] })
+        .where(eq(conversations.id, conversationId));
+    });
     return Response.json({ ok: true });
   } catch (error) {
     return apiError(error);

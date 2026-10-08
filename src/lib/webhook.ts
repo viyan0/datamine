@@ -2,7 +2,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { connections, providerEvents, messages, conversations } from '@/db/schema';
+import {
+  connections,
+  providerEvents,
+  messages,
+  conversations,
+  sharedProfiles,
+  profileEvents,
+  campaigns,
+} from '@/db/schema';
 import { decrypt, verifySignature } from './security';
 import { HttpError } from './access';
 
@@ -97,6 +105,15 @@ export async function ingestWebhook(raw: string, signature: string | null) {
           (c) => c.phoneNumberId === change.value.metadata.phone_number_id && c.wabaId === entry.id,
         );
         if (!connection || change.field !== 'messages') continue;
+        const datamineSender =
+          connection.campaignSender ||
+          (
+            await tx
+              .select({ id: campaigns.id })
+              .from(campaigns)
+              .where(eq(campaigns.senderId, connection.id))
+              .limit(1)
+          ).length > 0;
         for (const message of change.value.messages ?? []) {
           const timestamp = new Date(Number(message.timestamp) * 1000);
           if (!Number.isFinite(timestamp.getTime())) throw new HttpError(400, 'invalidWebhook');
@@ -127,12 +144,18 @@ export async function ingestWebhook(raw: string, signature: string | null) {
                 name: contactName,
                 lastInboundAt: timestamp,
                 lastMessageAt: timestamp,
+                analysisDueAt: new Date(Date.now() + 2000),
               })
               .onConflictDoUpdate({
                 target: [conversations.connectionId, conversations.contactPhone],
                 set: {
                   lastInboundAt: sql`greatest(${conversations.lastInboundAt}, excluded.last_inbound_at)`,
                   lastMessageAt: sql`greatest(${conversations.lastMessageAt}, excluded.last_message_at)`,
+                  analysisDueAt: new Date(Date.now() + 2000),
+                  analysisStatus: 'pending',
+                  analysisError: null,
+                  analysisAttempts: 0,
+                  analysisRevision: sql`${conversations.analysisRevision} + 1`,
                 },
               });
             await tx
@@ -150,10 +173,33 @@ export async function ingestWebhook(raw: string, signature: string | null) {
               })
               .onConflictDoNothing();
             stored++;
+            if (datamineSender) {
+              const stop =
+                /^(stop|unsubscribe|stop offers|إلغاء الاشتراك|توقف|وەستان|وازهێنان)[.!؟\s]*$/iu.test(
+                  message.text?.body?.trim() || '',
+                );
+              const [profile] = await tx
+                .update(sharedProfiles)
+                .set({
+                  offerHold: !stop,
+                  ...(stop ? { status: 'optedOut', updatedAt: new Date() } : {}),
+                })
+                .where(eq(sharedProfiles.phone, message.from))
+                .returning();
+              if (profile && stop)
+                await tx.insert(profileEvents).values({
+                  id: randomUUID(),
+                  profileId: profile.id,
+                  action: 'optedOut',
+                  noticeVersion: profile.consentVersion,
+                  locale: profile.language,
+                  channel: 'whatsapp',
+                });
+            }
           }
         }
         for (const status of change.value.statuses ?? []) {
-          await tx
+          const inserted = await tx
             .insert(providerEvents)
             .values({
               id: randomUUID(),
@@ -163,11 +209,13 @@ export async function ingestWebhook(raw: string, signature: string | null) {
               dedupeKey: eventKey(connection.id, 'status', status),
               payload: status,
             })
-            .onConflictDoNothing();
+            .onConflictDoNothing()
+            .returning({ id: providerEvents.id });
+          if (!inserted.length) continue;
           const ranks: Record<string, number> = { sent: 2, failed: 3, delivered: 4, read: 5 };
           const rank = ranks[status.status];
-          if (rank)
-            await tx
+          if (rank) {
+            const updated = await tx
               .update(messages)
               .set({
                 providerMessageId: status.id,
@@ -184,7 +232,27 @@ export async function ingestWebhook(raw: string, signature: string | null) {
                       : undefined,
                   ),
                 ),
-              );
+              )
+              .returning({ phone: messages.contactPhone, type: messages.type });
+            if (status.status !== 'failed')
+              for (const message of updated.filter((m) => m.type === 'text')) {
+                await tx
+                  .update(conversations)
+                  .set({
+                    analysisStatus: 'pending',
+                    analysisDueAt: new Date(Date.now() + 2000),
+                    analysisError: null,
+                    analysisAttempts: 0,
+                    analysisRevision: sql`${conversations.analysisRevision}+1`,
+                  })
+                  .where(
+                    and(
+                      eq(conversations.connectionId, connection.id),
+                      eq(conversations.contactPhone, message.phone),
+                    ),
+                  );
+              }
+          }
         }
         await tx
           .update(connections)

@@ -227,21 +227,20 @@ export async function saveCustomerProfile(
           set: {
             ...fields,
             status: 'active',
+            offerHold: false,
             consentVersion,
             consentAt: new Date(),
             updatedAt: new Date(),
           },
         })
         .returning();
-      await tx
-        .insert(profileEvents)
-        .values({
-          id: randomUUID(),
-          profileId: saved.id,
-          action: 'enrolled',
-          noticeVersion: consentVersion,
-          locale,
-        });
+      await tx.insert(profileEvents).values({
+        id: randomUUID(),
+        profileId: saved.id,
+        action: 'enrolled',
+        noticeVersion: consentVersion,
+        locale,
+      });
       return saved;
     }
     const [saved] = await tx
@@ -250,15 +249,13 @@ export async function saveCustomerProfile(
       .where(eq(sharedProfiles.phone, phone))
       .returning();
     if (!saved) throw new HttpError(404, 'notFound');
-    await tx
-      .insert(profileEvents)
-      .values({
-        id: randomUUID(),
-        profileId: saved.id,
-        action: 'preferencesUpdated',
-        noticeVersion: saved.consentVersion,
-        locale,
-      });
+    await tx.insert(profileEvents).values({
+      id: randomUUID(),
+      profileId: saved.id,
+      action: 'preferencesUpdated',
+      noticeVersion: saved.consentVersion,
+      locale,
+    });
     return saved;
   });
   return serialize(profile);
@@ -271,15 +268,13 @@ export async function optOutCustomer(phone: string, locale: string) {
       .where(and(eq(sharedProfiles.phone, phone), eq(sharedProfiles.status, 'active')))
       .returning();
     if (profile)
-      await tx
-        .insert(profileEvents)
-        .values({
-          id: randomUUID(),
-          profileId: profile.id,
-          action: 'optedOut',
-          noticeVersion: profile.consentVersion,
-          locale,
-        });
+      await tx.insert(profileEvents).values({
+        id: randomUUID(),
+        profileId: profile.id,
+        action: 'optedOut',
+        noticeVersion: profile.consentVersion,
+        locale,
+      });
   });
   return customerProfile(phone);
 }

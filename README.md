@@ -1,23 +1,23 @@
-# Datamine
+# Datamine · Phase 5 demo
 
-A multilingual business demo built with Next.js, TypeScript, PostgreSQL, Drizzle, Better Auth, and next-intl. Phase 4 adds customer opt-in and a central customer network. Shops, salons, clinics, travel companies, and other businesses share the same simple inbox and customer workflow, with their own categories.
+A multilingual business demo built with Next.js, TypeScript, PostgreSQL, Drizzle, Better Auth, and next-intl. Phase 5 adds automatic AI insights and offer matching. Shops, salons, clinics, travel companies, and other businesses share the same simple inbox and customer workflow, with categories chosen from each conversation.
 
 ## Available in the demo
 
 - Staff login with closed public registration, database-backed rate limits, and password changes.
 - Business creation and explicit memberships. Even the platform owner needs a business membership to read its private data.
-- A business type and up to 12 custom inquiry categories, editable by owners/admins in Settings. Haiku uses that business's categories; changing them invalidates saved analysis. Categories can be written in any language.
+- A business type and up to 12 optional category hints, editable by owners/admins in Settings. Haiku chooses its own labels; changing context schedules fresh analysis. Hints can be written in any language.
 - Administrator, agent, and viewer roles; single-use, 48-hour invitations. Invitations are copied and shared manually; the app does not send email.
 - English, Arabic, and Sorani interfaces, including right-to-left layouts. Translations should receive native-speaker review before the live pilot.
 - Meta account/phone verification, encrypted API credentials, signature verification, account-aware inbound routing, durable messages/events, and duplicate suppression.
 - Incoming-message inspection for authorized staff, including explicit labels for unsupported media.
-- An inbox at `/en/app/inbox` with business selection, customer search, status filters, the latest 100 messages, and manual refresh.
+- An inbox at `/en/app/inbox` with business selection, customer search, status filters, the latest 100 messages, and automatic refresh.
 - One customer/inquiry record per phone number per connected inbox: name, category, product/service/topic, New / In progress / Closed, and a private note. Incoming messages create records automatically, including backfilled Phase 1 messages.
 - Text replies from the correct business number, with accepted/sent/delivered/read/failed/uncertain states. Viewers cannot reply or edit records.
 - An **interactive sample inbox** at `/en/demo/inbox`, `/ar/demo/inbox`, and `/ckb/demo/inbox`. Replies are simulated and edits reset on leaving the inbox; sample records never reach Meta or the database.
-- An optional pg-boss worker for connection health. The inbox needs no worker or new infrastructure.
+- An optional pg-boss worker for connection health. Automatic analysis and campaign processing run alongside the app.
 
-Campaigns remain a later phase. Delivery states come from Meta callbacks, never AI. Assignments, reminders, multiple inquiries per customer, media previews, templates, and automatic replies are deliberately outside this simple demo.
+Offers now have automatic audience matching and simple approved-template delivery. Assignments, reminders, multiple inquiries per customer, media previews, and automatic replies remain outside this demo.
 
 ## Customer opt-in
 
@@ -25,7 +25,7 @@ From an inbox's customer details, staff create a private opt-in link and share i
 
 Verification alone does **not** enroll anyone. The customer enters their own name, language, interests, and optional product/service/topic, then checks an initially unchecked consent box to join Datamine and receive relevant WhatsApp offers. Consent is recorded with its notice version, locale, channel, and timestamp. No private conversation, staff note, or AI-inferred preference is copied into this profile.
 
-The central list at `/en/app/customers` is restricted to Datamine platform administrators. A phone number has one shared profile across businesses. Verified customers can update their own preferences, opt out, or explicitly join again. Preference changes never undo an opt-out. Opted-out records remain as suppression records; no campaigns or automated offers are sent by this phase.
+The central list at `/en/app/customers` is restricted to Datamine platform administrators. A phone number has one shared profile across businesses. Verified customers can update their own preferences, opt out, or explicitly join again. Preference changes never undo an opt-out. Opted-out records remain as suppression records; campaign sending checks this suppression again immediately before submission.
 
 Links expire after 24 hours; a conversation can create one per hour. Codes expire after 10 minutes, permit five incorrect attempts and three sends per link, and have a one-minute resend cooldown. Codes and link/session tokens are hashed; successful verification consumes the code and creates a 30-minute HttpOnly customer session. After it expires, the customer requests a fresh link and verifies again. No new SMS provider or worker is needed.
 
@@ -33,15 +33,27 @@ Try the simulated flow at `/en/enroll/demo` (also `/ar` and `/ckb`) with code **
 
 Existing database/API names such as `agencies`, `service`, and `destination` are retained for compatibility. Their user-facing meanings are business, category, and product/service/topic; there is no travel-only validation.
 
-## Simple AI analysis
+## Automatic AI analysis
 
-Open a conversation and click **Analyze conversation**. A single server-side Anthropic Messages request uses **`claude-haiku-5-5`**, low effort, disabled thinking, and [structured JSON output](https://platform.claude.com/docs/en/build-with-claude/structured-outputs). There is no fallback model, tool use, automatic reply, or extra worker.
+New messages schedule analysis automatically; staff do not click an Analyze button. A companion process starts with the app, reads persistent PostgreSQL jobs, and calls **claude-haiku-5-5** through Anthropic's Messages API with low effort, disabled thinking, and [structured JSON output](https://platform.claude.com/docs/en/build-with-claude/structured-outputs). No fallback model, tools, Redis, or extra hosted service is required.
 
-The card shows the business's category labels, request type, customer language, a short summary, requested product/service, location, date as stated, quantity, budget, and a suggested next step. Unknown facts stay null. Extracted facts must reference an inbound message with a matching quote. Results are suggestions and never overwrite staff-entered customer details, notes, or inquiry status. Older travel-only analysis is hidden until refreshed with the new schema.
+Haiku chooses category and intent labels itself, along with the useful facts for that business and conversation. Business category hints are optional and do not constrain the output. The category, product/service/topic, and inquiry status update automatically. Extracted facts must identify an inbound source message and an exact supporting quote; the value must occur in that quote. Unknown facts are omitted. Names and private notes are never overwritten. Manual category/topic/status corrections are retained until staff restore automatic details.
 
-Only up to 30 recent text messages are analyzed, capped at 16,000 characters total and 3,000 per message. Connection secrets, contact metadata, and private notes are excluded; text typed in messages is sent to Anthropic. Results, source IDs, model/schema version, timing, and token usage are saved in PostgreSQL. Unchanged input reuses the saved result. A short database lease prevents concurrent requests; changed source text invalidates in-flight results. Failures preserve the previous analysis and leave the inbox usable.
+Analysis includes at most 30 recent text messages, 16,000 characters total, and 3,000 per message. Connection secrets, contact metadata, and private notes are excluded; customer text itself is sent to Anthropic. Saved results include source IDs, model/schema version, timing, and token usage. Source hashes, revision checks, and 90-second leases prevent duplicate or stale work. Errors preserve prior results and retry with backoff; media-only conversations wait for text. The inbox polls for updates every four seconds while visible.
 
-Set `ANTHROPIC_API_KEY` on the server to enable real analysis. Without it, a setup message appears. Public sample inboxes offer **Try sample analysis**, which displays prepared localized examples without calling Anthropic. These fixtures do not analyze added demo replies and do not demonstrate measured model accuracy.
+Set ANTHROPIC_API_KEY to enable live analysis. Without it, the interface shows setup guidance. Public demo insights are prepared fixtures displayed automatically; they do not analyze arbitrary added sample replies or prove model accuracy.
+
+## Offers and campaigns
+
+Open **Campaigns** to submit an offer for any business. Haiku automatically classifies the offer and matches customers using only self-declared interests and product/service/topic. Names, phone numbers, private conversations, and staff notes are excluded from matching requests. Only active, unheld profiles with the offer's language are eligible; this demo supports up to 100 per language. Datamine administrators see the audience and match reasons; ordinary business staff see only their own offers and status.
+
+The platform administrator chooses a central Datamine WhatsApp sender and an approved marketing template. The demo lists static body/footer templates, without variables, buttons, or media, from the first 100 returned by Meta. The template must use the offer's language (or its regional variant). Selecting it automatically rematches the exact text customers will receive. An explicit **Send approved offer** action starts delivery; classification never sends messages on its own.
+
+Each recipient has a durable claim and tracked message. The sender's current template approval, enrollment, opt-out/hold state, language, and profile revision are checked again. Changed preferences require fresh matching; cancellation stops queued recipients. Uncertain sends are not automatically retried. Provider callbacks supply delivery status without regressing read/delivered receipts.
+
+Incoming messages to the Datamine sender put offers on hold until automatic analysis checks them for opt-out. Explicit STOP/unsubscribe commands suppress immediately, including when AI is unavailable. Haiku can suppress promotional messages but cannot grant consent or undo an opt-out. Customers can also opt out through their verified preferences page.
+
+The public Campaigns demo contains a prepared furniture offer and simulated delivery. New sample drafts are temporary and explicitly require a real AI connection for new matching.
 
 Replies are saved before a direct Meta request. A unique request ID prevents repeated submissions; a lost response is marked uncertain and is not retried automatically. Signed callbacks can reconcile it, and delayed events cannot move read/delivered messages backward. Text replies require a customer message within the last 24 hours, following [WhatsApp's messaging policy](https://business.whatsapp.com/policy). Outside that window, this demo waits for another customer message.
 
@@ -84,13 +96,14 @@ npm test
 npm run build
 ```
 
-With the locally built app running against the isolated local socket database, run:
+With the locally built app running against the isolated local socket database and AUTOMATION_DISABLED=true on the app process (to isolate provider mocks), run:
 
 ```sh
 node --env-file=.env.local --import tsx scripts/smoke.ts
+node --env-file=.env.local --import tsx scripts/smoke-phase5.ts
 ```
 
-This exercises login, invitations, business isolation/settings, three locales, signed webhooks, inbox edits, delivery safeguards, AI persistence/cache/evidence, verification expiry/replay/throttling, explicit consent, shared profile deduplication, opt-out, and private-data boundaries. Meta and Anthropic requests are mocked. It creates test fixtures and **refuses to run against a remote deployment**. Production health is checked separately through `/api/health`.
+This exercises login, invitations, business isolation/settings, three locales, signed webhooks, inbox edits, delivery safeguards, AI persistence/cache/evidence, verification expiry/replay/throttling, explicit consent, shared profile deduplication, opt-out, and private-data boundaries. The Phase 5 suite additionally checks automatic processing, retries/recovery, manual overrides, dynamic labels, campaign privacy, exact-template matching, consent changes, deduplicated delivery, uncertain outcomes, and opt-outs. Meta and Anthropic requests are mocked. The suites create test fixtures and **refuse to run against a remote deployment**. Production health is checked separately through `/api/health`.
 
 ## Deployment
 

@@ -128,12 +128,7 @@ export function WorkspaceForm({
               <p className="form-hint">{t('slugHint')}</p>
               <label>
                 {t('categoriesLabel')}
-                <input
-                  name="categories"
-                  defaultValue="general, sales, support, booking"
-                  required
-                  maxLength={720}
-                />
+                <input name="categories" defaultValue="" maxLength={720} />
               </label>
               <p className="form-hint">{t('categoriesHint')}</p>
               <label>

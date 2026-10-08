@@ -109,19 +109,33 @@ function InboxThreads({
   useEffect(() => {
     if (demo) return;
     const controller = new AbortController();
-    api(base, { signal: controller.signal })
-      .then((r) => {
-        setThreads(r.conversations);
-        setSelected((old) => old || r.conversations[0]?.id || null);
-        setError('');
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) setError(e.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
+    let running = false;
+    const load = () => {
+      if (running) return;
+      running = true;
+      return api(base, { signal: controller.signal })
+        .then((r) => {
+          if (controller.signal.aborted) return;
+          setThreads(r.conversations);
+          setSelected((old) => old || r.conversations[0]?.id || null);
+          setError('');
+        })
+        .catch((e) => {
+          if (!controller.signal.aborted) setError(e.message);
+        })
+        .finally(() => {
+          running = false;
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    };
+    void load();
+    const timer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 4000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
   }, [base, demo, revision]);
   const filtered = threads.filter(
     (c) =>
@@ -286,18 +300,32 @@ function ConversationView({
   useEffect(() => {
     if (demo) return;
     const controller = new AbortController();
-    api(url, { signal: controller.signal })
-      .then((r) => {
-        setHistory(r.messages);
-        setError('');
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) setError(e.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
+    let running = false;
+    const load = () => {
+      if (running) return;
+      running = true;
+      return api(url, { signal: controller.signal })
+        .then((r) => {
+          if (controller.signal.aborted) return;
+          setHistory(r.messages);
+          setError('');
+        })
+        .catch((e) => {
+          if (!controller.signal.aborted) setError(e.message);
+        })
+        .finally(() => {
+          running = false;
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    };
+    void load();
+    const timer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 4000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
   }, [url, demo, revision]);
   const items = demo ? sampleMessages : history;
   useEffect(() => {
@@ -368,7 +396,6 @@ function ConversationView({
           id={c.id}
           url={url}
           demo={demo}
-          editable={editable}
           revision={revision}
           lastMessageAt={c.lastMessageAt}
         />
@@ -482,18 +509,20 @@ function CustomerForm({
   onUpdate: (fields: Partial<Conversation>) => void;
 }) {
   const t = useTranslations('crm');
-  const [fields, setFields] = useState<CustomerFields>({
+  const [draft, setDraft] = useState<Partial<CustomerFields>>({});
+  const fields: CustomerFields = {
     name: c.name,
     service: c.service,
     destination: c.destination,
     inquiryStatus: c.inquiryStatus,
     note: c.note,
-  });
+    ...draft,
+  };
   const [busy, setBusy] = useState(false),
     [saved, setSaved] = useState(false),
     [error, setError] = useState('');
   function edit<K extends keyof CustomerFields>(key: K, value: CustomerFields[K]) {
-    setFields({ ...fields, [key]: value });
+    setDraft({ ...draft, [key]: value });
     setSaved(false);
   }
   async function save(event: FormEvent) {
@@ -501,8 +530,19 @@ function CustomerForm({
     setBusy(true);
     setError('');
     try {
-      if (!demo) await api(url, { method: 'PATCH', body: JSON.stringify(fields) });
-      onUpdate(fields);
+      if (!demo) await api(url, { method: 'PATCH', body: JSON.stringify(draft) });
+      onUpdate({
+        ...fields,
+        manualFields: [
+          ...new Set([
+            ...(c.manualFields || []),
+            ...Object.keys(draft).filter((k) =>
+              ['service', 'destination', 'inquiryStatus'].includes(k),
+            ),
+          ]),
+        ],
+      });
+      setDraft({});
       setSaved(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'serverError');
@@ -525,16 +565,18 @@ function CustomerForm({
         </label>
         <label>
           {t('service')}
-          <select
+          <input
+            required
+            maxLength={60}
+            list={`categories-${c.id}`}
             value={fields.service}
-            onChange={(e) => edit('service', e.target.value as CustomerFields['service'])}
-          >
-            {[...new Set([...categories, fields.service])].map((s) => (
-              <option key={s} value={s}>
-                {t.has(s) ? t(s) : s}
-              </option>
+            onChange={(e) => edit('service', e.target.value)}
+          />
+          <datalist id={`categories-${c.id}`}>
+            {[...new Set([...categories, ...(c.categories || []), fields.service])].map((s) => (
+              <option key={s} value={s} />
             ))}
-          </select>
+          </datalist>
         </label>
         <label>
           {t('destination')}
@@ -578,6 +620,24 @@ function CustomerForm({
           </Button>
         )}
       </fieldset>
+      {!!c.manualFields?.length && editable && (
+        <button
+          type="button"
+          className="text-link"
+          onClick={async () => {
+            try {
+              if (!demo)
+                await api(url, { method: 'PATCH', body: JSON.stringify({ automatic: true }) });
+              setDraft({});
+              onUpdate({ manualFields: [] });
+            } catch (e) {
+              setError(e instanceof Error ? e.message : 'serverError');
+            }
+          }}
+        >
+          {t('restoreAutomatic')}
+        </button>
+      )}
       <ErrorNotice error={error} />
       <span className="sr-only" role="status">
         {saved ? t('saved') : ''}

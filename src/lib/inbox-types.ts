@@ -7,6 +7,8 @@ export type CustomerFields = {
   note: string;
 };
 export type Conversation = CustomerFields & {
+  manualFields?: string[];
+  categories?: string[];
   id: string;
   agencyId: string;
   connectionId: string;

@@ -21,21 +21,20 @@ const valid = {
   reviewNote: null,
 };
 test('analysis keeps multiple services and missing facts; rejects invented or staff-only evidence', () => {
-  const parsed = validateAnalysis(valid, source, business);
+  const parsed = validateAnalysis(valid, source);
   assert.deepEqual(parsed.services, ['flight', 'visa']);
-  assert.equal(parsed.facts.budget, null);
+  assert.equal(
+    parsed.facts.some((f) => f.label === 'budget'),
+    false,
+  );
   assert.throws(
     () =>
       validateAnalysis(
         {
           ...valid,
-          facts: {
-            ...valid.facts,
-            location: { value: 'Dubai', quote: 'Dubai', messageId: 'sample-msg-1' },
-          },
+          facts: [{ label: 'City', value: 'Dubai', quote: 'Dubai', messageId: 'sample-msg-1' }],
         },
         source,
-        business,
       ),
     AnalysisError,
   );
@@ -44,22 +43,20 @@ test('analysis keeps multiple services and missing facts; rejects invented or st
       validateAnalysis(
         {
           ...valid,
-          facts: {
-            ...valid.facts,
-            location: { value: 'Hi Ava', quote: 'Hi Ava', messageId: 'sample-msg-2' },
-          },
+          facts: [
+            { label: 'Greeting', value: 'Hi Ava', quote: 'Hi Ava', messageId: 'sample-msg-2' },
+          ],
         },
         source,
-        business,
       ),
     AnalysisError,
   );
   assert.throws(
-    () => validateAnalysis({ ...valid, intent: 'confirmedBooking' }, source, business),
+    () => validateAnalysis({ ...valid, inquiryStatus: 'confirmedBooking' }, source),
     AnalysisError,
   );
   assert.throws(
-    () => validateAnalysis({ ...valid, services: ['unsupported'] }, source, business),
+    () => validateAnalysis({ ...valid, services: ['x'.repeat(61)] }, source),
     AnalysisError,
   );
 });
@@ -82,10 +79,8 @@ test('Haiku request uses the fixed model and strict JSON; refuses failures witho
     assert.equal(payload.output_config.format.schema.additionalProperties, false);
     assert.equal(payload.tools, undefined);
     assert.deepEqual(JSON.parse(payload.messages[0].content).business, business);
-    assert.deepEqual(
-      payload.output_config.format.schema.properties.services.items.enum,
-      business.categories,
-    );
+    assert.equal(payload.output_config.format.schema.properties.services.items.enum, undefined);
+    assert.equal(payload.output_config.format.schema.properties.services.items.type, 'string');
     assert.ok(payload.system.includes('Sorani Kurdish'));
     return Response.json(
       {
@@ -128,8 +123,7 @@ test('Haiku request uses the fixed model and strict JSON; refuses failures witho
   }
 });
 
-test('custom non-travel categories work and remain scoped to each business', () => {
-  const shop = { industry: 'Furniture', categories: ['furniture', 'delivery', 'support'] };
+test('AI categories and fact labels are open-ended across business types', () => {
   const messages = demoMessages['sample-dilan'].map((m) => ({ ...m, body: m.body! }));
   const { copyKey: _key, ...example } = sampleAnalyses['sample-dilan'];
   void _key;
@@ -139,13 +133,22 @@ test('custom non-travel categories work and remain scoped to each business', () 
     nextStep: 'Share sofa options.',
     reviewNote: null,
   };
-  assert.deepEqual(validateAnalysis(result, messages, shop).services, ['furniture', 'delivery']);
-  assert.throws(() => validateAnalysis(result, messages, business), AnalysisError);
-  assert.deepEqual(
-    validateAnalysis({ ...result, services: ['پێڵاو'] }, messages, {
-      industry: 'Shoes',
-      categories: ['پێڵاو'],
-    }).services,
-    ['پێڵاو'],
+  assert.deepEqual(validateAnalysis(result, messages).services, ['furniture', 'delivery']);
+  assert.deepEqual(validateAnalysis({ ...result, services: ['پێڵاو'] }, messages).services, [
+    'پێڵاو',
+  ]);
+});
+
+test('a real quote cannot be used to smuggle an invented fact value', () => {
+  assert.throws(
+    () =>
+      validateAnalysis(
+        {
+          ...valid,
+          subject: { value: 'Dubai', quote: 'two return tickets', messageId: 'sample-msg-1' },
+        },
+        source,
+      ),
+    AnalysisError,
   );
 });

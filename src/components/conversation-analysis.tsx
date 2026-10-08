@@ -1,94 +1,83 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
-import { useLocale, useTranslations } from 'next-intl';
+import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Sparkles, ChevronDown, LoaderCircle } from 'lucide-react';
-import { factNames, type AnalysisResult, type AnalysisState } from '@/lib/analysis-types';
+import type { AnalysisState } from '@/lib/analysis-types';
 import { sampleAnalyses } from '@/lib/demo-analysis';
-
 export function ConversationAnalysis({
   id,
   url,
   demo,
-  editable,
   revision,
   lastMessageAt,
 }: {
   id: string;
   url: string;
   demo: boolean;
-  editable: boolean;
   revision: number;
   lastMessageAt: string;
 }) {
   const t = useTranslations('ai'),
     crm = useTranslations('crm'),
-    errors = useTranslations('errors'),
-    locale = useLocale();
+    errors = useTranslations('errors');
   const [state, setState] = useState<AnalysisState>({
     analysis: null,
     stale: false,
     configured: false,
+    status: 'pending',
+    error: null,
   });
-  const [sample, setSample] = useState<AnalysisResult | null>(null);
-  const [loading, setLoading] = useState(!demo),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
-  const running = useRef(false),
-    generation = useRef(0);
+  const [error, setError] = useState(''),
+    [loaded, setLoaded] = useState(demo);
   useEffect(() => {
     if (demo) return;
     const controller = new AbortController();
-    const current = ++generation.current;
-    fetch(`${url}/analysis`, { cache: 'no-store', signal: controller.signal })
-      .then(async (r) => {
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error);
-        if (generation.current === current) {
+    let running = false;
+    const load = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const response = await fetch(`${url}/analysis`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        if (!controller.signal.aborted) {
           setState(data);
           setError('');
+          setLoaded(true);
         }
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted && generation.current === current) setError(e.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
+      } catch (e) {
+        if (!controller.signal.aborted)
+          setError(e instanceof Error ? e.message : 'analysisUnavailable');
+      } finally {
+        running = false;
+      }
+    };
+    void load();
+    const timer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 4000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
   }, [url, demo, revision, lastMessageAt]);
-  async function analyze() {
-    if (running.current) return;
-    running.current = true;
-    setBusy(true);
-    setError('');
-    ++generation.current;
-    try {
-      if (demo) {
-        const preview = sampleAnalyses[id];
-        setSample({
+  const preview = sampleAnalyses[id];
+  const result =
+    demo && preview
+      ? {
           ...preview,
           summary: t(`samples.${preview.copyKey}.summary`),
           nextStep: t(`samples.${preview.copyKey}.nextStep`),
           reviewNote: t(`samples.${preview.copyKey}.reviewNote`),
-        });
-      } else {
-        const response = await fetch(`${url}/analysis`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ locale }),
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
-        setState({ configured: true, stale: false, analysis: data.analysis });
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'analysisUnavailable');
-    } finally {
-      running.current = false;
-      setBusy(false);
-    }
-  }
-  const result = demo ? sample : state.analysis?.result;
+        }
+      : state.analysis?.result;
+  const busy = !demo && state.configured && ['pending', 'processing'].includes(state.status);
+  const facts = result
+    ? [...(result.subject ? [{ label: 'request', ...result.subject }] : []), ...result.facts]
+    : [];
   return (
     <div className="analysis-card" aria-label={t('title')} aria-busy={busy}>
       <div className="analysis-heading">
@@ -96,26 +85,18 @@ export function ConversationAnalysis({
           <Sparkles size={15} />
           <strong>{t('title')}</strong>
         </span>
-        {editable && (
-          <button
-            type="button"
-            className="analysis-button"
-            onClick={analyze}
-            disabled={busy || loading || (!demo && !state.configured)}
-          >
-            {busy ? (
-              <LoaderCircle size={13} className="analysis-spinner" />
-            ) : (
-              <Sparkles size={13} />
-            )}
-            {t(busy ? 'analyzing' : demo ? 'preview' : result ? 'refresh' : 'analyze')}
-          </button>
-        )}
+        <span className="analysis-auto">
+          {busy && <LoaderCircle size={13} className="analysis-spinner" />}
+          {t(demo ? 'sampleBadge' : busy ? 'analyzing' : 'automatic')}
+        </span>
       </div>
       <p className="analysis-caption">{t(demo ? 'demoHint' : 'hint')}</p>
-      {!demo && !loading && !state.configured && <p className="analysis-notice">{t('setup')}</p>}
-      {(state.stale || (!demo && state.analysis && state.analysis.locale !== locale)) && (
-        <p className="analysis-notice">{t('stale')}</p>
+      {!demo && loaded && !state.configured && <p className="analysis-notice">{t('setup')}</p>}
+      {!demo && state.configured && state.status === 'error' && (
+        <p className="analysis-notice">{t('retrying')}</p>
+      )}
+      {!demo && state.status === 'waitingForText' && (
+        <p className="analysis-notice">{errors('analysisNoText')}</p>
       )}
       {error && (
         <p className="inbox-error" role="alert">
@@ -125,10 +106,12 @@ export function ConversationAnalysis({
       {result && (
         <>
           <div className="analysis-tags">
-            {result.services.map((service) => (
-              <span key={service}>{crm.has(service) ? crm(service) : service}</span>
+            {result.services.map((s) => (
+              <span key={s}>{crm.has(s) ? crm(s) : s}</span>
             ))}
-            <span>{t(`intents.${result.intent}`)}</span>
+            <span>
+              {t.has(`intents.${result.intent}`) ? t(`intents.${result.intent}`) : result.intent}
+            </span>
           </div>
           <p className="analysis-summary" dir="auto">
             {result.summary}
@@ -139,10 +122,10 @@ export function ConversationAnalysis({
               <ChevronDown size={13} />
             </summary>
             <dl>
-              {factNames.map((field) => (
-                <div key={field}>
-                  <dt>{t(field)}</dt>
-                  <dd dir="auto">{result.facts[field]?.value || t('unknown')}</dd>
+              {facts.map((fact, i) => (
+                <div key={i}>
+                  <dt dir="auto">{t.has(fact.label) ? t(fact.label) : fact.label}</dt>
+                  <dd dir="auto">{fact.value}</dd>
                 </div>
               ))}
               <div>
@@ -159,27 +142,21 @@ export function ConversationAnalysis({
                 {result.reviewNote}
               </p>
             )}
-            {factNames.some((field) => result.facts[field]) && (
+            {!!facts.length && (
               <details className="analysis-evidence">
                 <summary>{t('sources')}</summary>
-                {factNames.map((field) => {
-                  const fact = result.facts[field];
-                  return fact ? (
-                    <div key={field}>
-                      <strong>{t(field)}</strong>
-                      <q dir="auto">{fact.quote}</q>
-                    </div>
-                  ) : null;
-                })}
+                {facts.map((fact, i) => (
+                  <div key={i}>
+                    <strong>{t.has(fact.label) ? t(fact.label) : fact.label}</strong>
+                    <q dir="auto">{fact.quote}</q>
+                  </div>
+                ))}
               </details>
             )}
             <p className="analysis-footnote">{t(demo ? 'sampleResult' : 'reviewHint')}</p>
           </details>
         </>
       )}
-      <span className="sr-only" role="status">
-        {busy ? t('analyzing') : result ? t('ready') : ''}
-      </span>
     </div>
   );
 }

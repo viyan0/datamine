@@ -6,10 +6,7 @@ const emptyFacts = {
   quantity: null,
   budget: null,
 };
-export const sampleAnalyses: Record<
-  string,
-  Omit<AnalysisResult, 'summary' | 'nextStep' | 'reviewNote'> & { copyKey: string }
-> = {
+const originals = {
   'sample-ava': {
     copyKey: 'ava',
     language: 'en',
@@ -68,3 +65,22 @@ export const sampleAnalyses: Record<
     },
   },
 };
+
+export const sampleAnalyses: Record<
+  string,
+  Omit<AnalysisResult, 'summary' | 'nextStep' | 'reviewNote'> & { copyKey: string }
+> = Object.fromEntries(
+  Object.entries(originals).map(([id, p]) => [
+    id,
+    {
+      ...p,
+      language: p.language as AnalysisResult['language'],
+      inquiryStatus: 'new',
+      stopOffers: null,
+      subject: p.facts.request,
+      facts: Object.entries(p.facts)
+        .filter(([key, value]) => key !== 'request' && value)
+        .map(([label, value]) => ({ label, ...value! })),
+    },
+  ]),
+);

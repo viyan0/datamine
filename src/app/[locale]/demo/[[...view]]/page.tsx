@@ -6,9 +6,16 @@ export default async function Demo({ params }: { params: Promise<{ view?: string
     section = view?.[0] || 'overview';
   if (
     (view?.length ?? 0) > 1 ||
-    !['overview', 'customers', 'inbox', 'agencies', 'team', 'connections', 'settings'].includes(
-      section,
-    )
+    ![
+      'overview',
+      'campaigns',
+      'customers',
+      'inbox',
+      'agencies',
+      'team',
+      'connections',
+      'settings',
+    ].includes(section)
   )
     notFound();
   return <Dashboard data={demoData} section={section} demo />;

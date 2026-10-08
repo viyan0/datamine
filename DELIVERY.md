@@ -1,5 +1,11 @@
 # Phase 5 demo delivery
 
+## Railway and Meta setup in progress
+
+Hosting was changed to Railway at the owner's request. The repository now includes a Docker deployment, private-file exclusions, Railway URL support, and setup instructions in RAILWAY.md. Existing work was committed and pushed before account setup began.
+
+The Meta creation wizard has Datamine's name, contact email, and WhatsApp use case entered, but **no app has been created yet**: the owner must select the intended existing business portfolio. Railway currently opens GitHub sign-in in Chrome; no Railway project or database has been created. A controlled WhatsApp recipient and an Anthropic API key are also needed for real end-to-end verification. Prepared forms and local tests are not evidence of a live deployment.
+
 ## Implemented
 
 - Existing business login, roles, encrypted WhatsApp connections, signed message ingestion, inbox/replies, multilingual UI, verified customer opt-in, and private-data boundaries.
@@ -25,7 +31,7 @@ All Anthropic and outbound Meta calls in integration tests are mocked. Real mode
 
 ## External setup still required — Phase 6
 
-- **Render:** the earlier free PostgreSQL creation returned HTTP 402 requiring billing setup at https://dashboard.render.com/billing. No database/web service or public live URL has been provisioned or verified.
+- **Hosting:** Railway is now the requested target and sign-in is pending. The earlier Render free PostgreSQL creation returned HTTP 402 requiring billing setup; Render is retained only as an alternative. No public live URL has been provisioned or verified.
 - **Anthropic:** configure a server-side API key with access to the selected model, claude-haiku-5-5, then verify automatic analysis with real conversations.
 - **WhatsApp:** connect real Meta assets, webhook subscriptions, the central Datamine sender, and approved templates in the intended languages. Test with controlled recipients.
 - **Pilot review:** native-speaker Arabic/Sorani review and a complete inquiry → opt-in → offer → opt-out test on managed PostgreSQL. Always-on hosting is needed for prompt processing; a sleeping free web service only processes jobs while awake.

@@ -1,6 +1,6 @@
 # Phase 5 demo delivery
 
-## Vercel live; Meta setup pending
+## Vercel live; real WhatsApp round trip verified
 
 The demo is live at **https://datamine-lilac.vercel.app**; sample inbox: **https://datamine-lilac.vercel.app/en/demo/inbox**. Production deployment `dpl_GFuxGDp1A71uAvBoFx6mi1QpYwXp` serves source commit `6e51726` from GitHub `main`. Its cloud build succeeded and GitHub CI passed (run `37807517121`).
 
@@ -8,7 +8,11 @@ The project **viki-0760/datamine** is on Vercel Hobby with Neon Free PostgreSQL 
 
 Live checks passed: public English/Arabic/Sorani sample inboxes; database health; owner sign-in; authenticated inbox/customer/campaign APIs; rejected anonymous access; correct and incorrect webhook verification tokens; authenticated business settings update; and the daily recovery endpoint. That business update invoked the managed queue consumer, which completed with HTTP 200. The consumer is inaccessible over public HTTP. Its logs contain a PostgreSQL driver's SSL-mode deprecation warning, not a processing failure. The public sample furniture inbox was also verified in Chrome. No fake messages or customer records were inserted into the production database.
 
-The owner selected the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio for Datamine and authorized replacing its previous project connection. Its WhatsApp callback currently points to the previous Railway project; the `messages` subscription uses Graph API v26.0. The test number is +1 (555) 632-3113 (phone ID `1328135173721537`, WABA `2248867165684591`). The callback has not been changed because connection credentials are still missing. The browser is at Generate token, awaiting the required confirmation for credential creation. A controlled WhatsApp recipient and server-side Anthropic API key were requested. The selected Haiku 5.5 model exists in the current provider catalog; Vercel AI Gateway has zero credits, so no alternative provider was enabled.
+The owner selected the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio for Datamine and authorized replacing its previous project connection. Its active WhatsApp callback is now **https://datamine-lilac.vercel.app/api/webhooks/whatsapp**, verified by Meta; the previous Railway callback was replaced while preserving its existing subscribed fields. Graph API v26.0 is configured. The test number is +1 (555) 632-3113 (phone ID `1328135173721537`, WABA `2248867165684591`). Its temporary access token and app secret were verified through Meta and stored encrypted through the Datamine connection API. The connection is also selected as the central Datamine sender. Other Meta apps and old hosting resources were not deleted.
+
+On 2026-10-08, the owner verified a controlled recipient using Meta's WhatsApp code. The initial approved `hello_world` message was accepted, delivered, and read, with real signed status callbacks recorded in Neon. The owner's replies then created a real conversation automatically. A reply sent through the production Datamine browser inbox was delivered and read; the UI and stored message status updated automatically. This verifies Meta → Vercel webhook → PostgreSQL → inbox and Datamine inbox → Meta → recipient → delivery/read tracking. The initial template was sent directly through Meta to open the test conversation; it is not a Datamine campaign delivery test.
+
+The server-side Anthropic API key is still missing, so the real inquiry correctly shows the AI setup notice and remains pending analysis. The selected Haiku 5.5 model exists in the current provider catalog; Vercel AI Gateway has zero credits, so no alternative provider was enabled. The temporary Meta token is suitable for this setup test and needs replacement with a durable token for ongoing use. Meta's app-level privacy and data-deletion links still reference the previous site's pages and require replacement before a public pilot; webhook traffic already goes to Datamine.
 
 ## Implemented
 
@@ -31,13 +35,13 @@ Vercel uses managed queue wakeups and its existing function runtime; no Redis in
 - Phase 5 smoke suite: automatic scheduling/classification, arbitrary labels, manual overrides, stale-source rejection, backoff/restart recovery, campaign role/privacy boundaries, template filtering and exact-message matching, preference/consent changes, duplicate sends, late callbacks, uncertain outcomes, cancellation, natural-language opt-out, and offline STOP.
 - Browser: insights appear automatically; furniture inbox, salon offer submission, simulated campaign delivery, and Arabic/Sorani mobile campaign layouts verified. Samples are clearly labeled.
 
-All Anthropic and outbound Meta calls in integration tests are mocked. Real model accuracy, latency, cost, verification-code delivery, and WhatsApp campaign delivery have not been measured. Public sample data does not make real provider calls.
+All Anthropic and outbound Meta calls in automated integration tests are mocked. Separately, the live Meta recipient verification, initial template, inbound conversation, browser reply, and delivery/read callbacks passed on the managed production database. Real model accuracy, latency, cost, Datamine enrollment-code delivery, and WhatsApp campaign delivery have not been measured. Public sample data does not make real provider calls.
 
 ## External setup still required — Phase 6
 
 - **Hosting:** Vercel and Neon are deployed and verified. The optional GitHub-to-Vercel integration remains unconnected; use the CLI to release new commits. Render remains an alternative; its earlier free database creation returned HTTP 402 requiring billing setup.
 - **Anthropic:** configure a server-side API key with access to the selected model, claude-haiku-5-5, then verify automatic analysis with real conversations.
-- **WhatsApp:** connect real Meta assets, webhook subscriptions, the central Datamine sender, and approved templates in the intended languages. Test with controlled recipients.
+- **WhatsApp:** the test sender, verified webhook, central sender, controlled recipient, and real inbox round trip are connected and verified. For continued use, replace the temporary token, update the old privacy/data-deletion site links, and provide supported approved marketing templates in the intended languages. Campaign delivery remains untested with real recipients.
 - **Pilot review:** native-speaker Arabic/Sorani review and a complete inquiry → opt-in → offer → opt-out test on managed PostgreSQL. Always-on hosting is needed for prompt processing; a sleeping free web service only processes jobs while awake.
 
 Demo limits: one inquiry per contact/number, latest 100 displayed messages, 30 text messages per AI analysis, 100 eligible profiles per offer language, and static templates from the first 100 returned by Meta. No assignments, reminder scheduler, media transcription, or automatic conversational replies.

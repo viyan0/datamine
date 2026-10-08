@@ -4,7 +4,7 @@
 
 Render is the requested hosting target, using the existing Blueprint and PostgreSQL in Viyan's workspace. Railway-specific configuration has been removed. The connected Render workspace currently has no services or databases.
 
-Datamine is being created as a **new Meta app** with the WhatsApp use case. The existing names displayed by Meta are business portfolios, not apps to reuse. App creation is waiting for the owner to confirm whether to create a new Datamine business portfolio. No Meta app or portfolio has been created yet. A controlled WhatsApp test recipient and a server-side Anthropic API key are still required for live verification.
+The owner selected the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio for Datamine and authorized replacing its previous project connection. Its WhatsApp callback currently points to the previous Railway project; the `messages` subscription uses Graph API v26.0. The callback has not been changed: Datamine first needs a working public Render URL. No new Meta app or portfolio is needed. A controlled WhatsApp test recipient and a server-side Anthropic API key are still required for live verification.
 
 ## Implemented
 

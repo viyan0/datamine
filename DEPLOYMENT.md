@@ -37,7 +37,7 @@ Render background workers require a paid plan, so the free demo Blueprint does n
 
 ## Connect real WhatsApp businesses
 
-For this demo, create a new Meta app named Datamine with the WhatsApp use case. Meta requires a business portfolio to own the app; creating the app does not reuse an existing app. Use the owner's chosen portfolio, or create a new Datamine portfolio when confirmed. Connect Meta's test sender and a verified recipient controlled by the owner. Temporary test tokens expire and must be refreshed before subsequent demos.
+For this demo, use the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio, as selected by the owner. Replace its previous project's callback with the deployed Datamine `/api/webhooks/whatsapp` endpoint once the public Render service is healthy and the connection credentials are configured. Meta currently shows the `messages` subscription at Graph API v26.0; confirm the version and set `META_GRAPH_VERSION` when connecting. Use Meta's test sender and a verified recipient controlled by the owner. Temporary test tokens expire and must be refreshed before subsequent demos. Changing the callback disconnects incoming events from the old project; deleting that project's app, data, or hosting resources is not required.
 
 1. Create each business with its type and optional category hints, then invite its staff. Validate that a staff account cannot access another business's message endpoint.
 2. An agency owner/admin opens **WhatsApp connections → Connect number** and supplies its existing Meta phone number ID, WABA ID, system-user token, and app secret. The server checks the phone belongs to the WABA using Meta's API before encrypting the credentials.

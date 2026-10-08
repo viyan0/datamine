@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, lt, or } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { conversations, messages } from '@/db/schema';
+import { agencies, conversations, messages } from '@/db/schema';
+import type { BusinessContext } from './business';
 import { getConversation } from './inbox';
 import {
   analysisModel,
@@ -44,19 +45,27 @@ async function sourceMessages(c: typeof conversations.$inferSelect): Promise<Sou
   }
   return source.reverse();
 }
-function fingerprint(source: SourceMessage[], locale: string) {
+async function businessContext(id: string): Promise<BusinessContext> {
+  const [business] = await getDb()
+    .select({ industry: agencies.industry, categories: agencies.categories })
+    .from(agencies)
+    .where(eq(agencies.id, id));
+  return business;
+}
+function fingerprint(source: SourceMessage[], locale: string, business: BusinessContext) {
   return createHash('sha256')
-    .update(JSON.stringify([analysisVersion, analysisModel, locale, source]))
+    .update(JSON.stringify([analysisVersion, analysisModel, locale, business, source]))
     .digest('hex');
 }
 export async function getAnalysisState(agencyId: string, id: string) {
   const c = await getConversation(agencyId, id);
   return {
-    analysis: c.analysis,
+    analysis: c.analysis?.version === analysisVersion ? c.analysis : null,
     configured: analysisConfigured(),
     stale:
       !!c.analysis &&
-      c.analysis.sourceHash !== fingerprint(await sourceMessages(c), c.analysis.locale),
+      c.analysis.sourceHash !==
+        fingerprint(await sourceMessages(c), c.analysis.locale, await businessContext(agencyId)),
   };
 }
 export async function analyzeConversation(agencyId: string, id: string, locale: string) {
@@ -64,7 +73,8 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
   const source = await sourceMessages(c);
   if (!source.some((m) => m.direction === 'inbound'))
     throw new AnalysisError('analysisNoText', 422);
-  const sourceHash = fingerprint(source, locale);
+  const business = await businessContext(agencyId);
+  const sourceHash = fingerprint(source, locale, business);
   if (c.analysis?.sourceHash === sourceHash) return c.analysis;
   if (!analysisConfigured()) throw new AnalysisError('analysisNotConfigured', 503);
   const db = getDb(),
@@ -85,8 +95,10 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
     .returning({ id: conversations.id });
   if (!claimed) throw new AnalysisError('analysisBusy', 409);
   try {
-    const output = await analyzeWithHaiku(source, locale);
-    if (fingerprint(await sourceMessages(c), locale) !== sourceHash)
+    const output = await analyzeWithHaiku(source, locale, business);
+    if (
+      fingerprint(await sourceMessages(c), locale, await businessContext(agencyId)) !== sourceHash
+    )
       throw new AnalysisError('analysisChanged', 409);
     const analysis: SavedAnalysis = {
       ...output,

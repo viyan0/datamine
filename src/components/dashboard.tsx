@@ -36,12 +36,15 @@ import { LanguageSwitch } from './language-switch';
 import { WorkspaceForm, type FormKind } from './workspace-form';
 import { Dialog } from './dialog';
 import { authClient } from '@/lib/auth-client';
+import { CustomerDirectory } from './customer-directory';
+import { BusinessSettings } from './business-settings';
 import { AgencyInbox } from './inbox';
 
 const languageNames: Record<string, string> = { en: 'English', ar: 'العربية', ckb: 'کوردی' };
 const nav = [
   { key: 'overview', icon: LayoutGrid },
   { key: 'inbox', icon: Inbox },
+  { key: 'customers', icon: Users },
   { key: 'agencies', icon: Building2 },
   { key: 'team', icon: Users },
   { key: 'connections', icon: MessageCircle },
@@ -96,6 +99,7 @@ export function Dashboard({
   const headerKeys: Record<string, [string, string]> = {
     overview: ['welcome', 'welcomeSub'],
     inbox: ['inboxTitle', 'inboxSub'],
+    customers: ['customersTitle', 'customersSub'],
     agencies: ['agenciesTitle', 'agenciesSub'],
     team: ['teamTitle', 'teamSub'],
     connections: ['connectionTitle', 'connectionSub'],
@@ -124,7 +128,7 @@ export function Dashboard({
                       <Avatar name={a.name} index={i} />
                       <span>
                         <strong>{a.name}</strong>
-                        <small>{a.slug}</small>
+                        <small>{a.industry}</small>
                       </span>
                     </div>
                   </td>
@@ -188,19 +192,21 @@ export function Dashboard({
         </div>
         <p className="nav-label">{t('workspace')}</p>
         <nav aria-label={t('workspace')}>
-          {nav.map(({ key, icon: Icon }) => (
-            <Link
-              key={key}
-              href={`${root}${key === 'overview' ? '' : `/${key}`}`}
-              className={`nav-item ${section === key ? 'selected' : ''}`}
-              aria-current={section === key ? 'page' : undefined}
-              onClick={() => setMenu(false)}
-            >
-              <Icon size={18} />
-              <span>{t(key)}</span>
-              {key === 'agencies' && <span className="nav-count">{data.agencies.length}</span>}
-            </Link>
-          ))}
+          {nav
+            .filter((item) => item.key !== 'customers' || data.user.platformAdmin)
+            .map(({ key, icon: Icon }) => (
+              <Link
+                key={key}
+                href={`${root}${key === 'overview' ? '' : `/${key}`}`}
+                className={`nav-item ${section === key ? 'selected' : ''}`}
+                aria-current={section === key ? 'page' : undefined}
+                onClick={() => setMenu(false)}
+              >
+                <Icon size={18} />
+                <span>{t(key)}</span>
+                {key === 'agencies' && <span className="nav-count">{data.agencies.length}</span>}
+              </Link>
+            ))}
         </nav>
         <p className="nav-label future-label">{t('comingNext')}</p>
         <div className="future-nav">
@@ -215,7 +221,7 @@ export function Dashboard({
         <div className="sidebar-bottom">
           <div className="phase-card">
             <span className="phase-dot" />
-            <strong>{t('phaseThree')}</strong>
+            <strong>{t('phaseFour')}</strong>
             <p>{t('phaseCaption')}</p>
             <div className="phase-track">
               <span />
@@ -260,7 +266,7 @@ export function Dashboard({
           <div className="topbar-right">
             <span className="pilot-tag">
               <span className="small-dot" />
-              {t('phaseThree')}
+              {t('phaseFour')}
             </span>
             <LanguageSwitch />
           </div>
@@ -316,6 +322,7 @@ export function Dashboard({
               </button>
             </div>
           )}
+          {section === 'customers' && data.user.platformAdmin && <CustomerDirectory demo={demo} />}
           {section === 'inbox' && <AgencyInbox data={data} demo={demo} />}
           {section === 'overview' && (
             <>
@@ -627,6 +634,7 @@ export function Dashboard({
                 <h3>{t('phaseScope')}</h3>
                 <p>{t('scopeText')}</p>
               </section>
+              <BusinessSettings data={data} demo={demo} />
               <PasswordPanel demo={demo} />
             </div>
           )}
@@ -634,7 +642,7 @@ export function Dashboard({
             <span>
               Datamine <span>✦</span> {t('brandTag')}
             </span>
-            <span>{t('phaseThree')}</span>
+            <span>{t('phaseFour')}</span>
           </footer>
         </main>
       </div>

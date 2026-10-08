@@ -1,8 +1,7 @@
-export const services = ['other', 'flight', 'visa', 'hotel', 'package', 'transfer'] as const;
 export const inquiryStatuses = ['new', 'inProgress', 'closed'] as const;
 export type CustomerFields = {
   name: string;
-  service: (typeof services)[number];
+  service: string;
   destination: string;
   inquiryStatus: (typeof inquiryStatuses)[number];
   note: string;

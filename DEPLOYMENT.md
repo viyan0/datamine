@@ -33,11 +33,11 @@ Phase 1 inbound ingestion commits synchronously; it does not depend on a worker 
 - Ensure migrations have completed before starting the worker.
 - Allow 30 seconds for graceful SIGTERM shutdown.
 
-Render background workers require a paid plan, so the free demo Blueprint does not provision one. Failed health-check jobs retry with backoff and remain in pg-boss for inspection. AI analysis queues will be added with Phase 3.
+Render background workers require a paid plan, so the free demo Blueprint does not provision one. Failed health-check jobs retry with backoff and remain in pg-boss for inspection. AI analysis and customer enrollment use direct requests and do not need this worker.
 
-## Connect real WhatsApp agencies
+## Connect real WhatsApp businesses
 
-1. Create each agency and invite its staff. Validate that a staff account cannot access another agency's message endpoint.
+1. Create each business with its type and inquiry categories, then invite its staff. Validate that a staff account cannot access another business's message endpoint.
 2. An agency owner/admin opens **WhatsApp connections → Connect number** and supplies its existing Meta phone number ID, WABA ID, system-user token, and app secret. The server checks the phone belongs to the WABA using Meta's API before encrypting the credentials.
 3. The workspace owner copies the callback URL and verification token from the connections page. Configure the callback in Meta and subscribe to the `messages` field for the appropriate app/WABA. Existing integrations may already use that callback; review or arrange event forwarding before replacing it.
 4. Send a controlled test text to each real number. The connection changes from **Credentials verified** to **Receiving events** only after a valid, signed callback. Inspect received messages and confirm agency routing.
@@ -52,6 +52,8 @@ Add `ANTHROPIC_API_KEY` to the web service environment and retain `ANTHROPIC_MOD
 Once configured, use a controlled text conversation, click **Analyze conversation**, and check the service labels, extracted quotes, summary language, and missing details. Repeat in English, Arabic, and Sorani. Confirm the saved result survives reload and that staff notes/status stay unchanged. This live model check remains pending; automated checks currently mock Anthropic.
 
 ## Operational notes
+
+For Phase 4, use a controlled customer conversation to create an opt-in link, request the WhatsApp code, verify the number, and explicitly join. Confirm the platform administrator's customer list updates, then opt out and confirm the status persists. Real code delivery remains unverified until Meta is connected. The sample enrollment flow sends no messages and needs no credentials.
 
 - `/api/health` checks database connectivity and the migrated user table; it is not a claim that WhatsApp or AI is connected.
 - Each Next.js instance uses at most five PostgreSQL connections; the optional worker uses a separate pool. Adjust only after measuring load and database limits.

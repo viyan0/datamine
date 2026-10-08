@@ -126,7 +126,7 @@ export function ConversationAnalysis({
         <>
           <div className="analysis-tags">
             {result.services.map((service) => (
-              <span key={service}>{crm(service)}</span>
+              <span key={service}>{crm.has(service) ? crm(service) : service}</span>
             ))}
             <span>{t(`intents.${result.intent}`)}</span>
           </div>

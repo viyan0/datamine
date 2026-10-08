@@ -1,9 +1,9 @@
 import type { AnalysisResult } from './analysis-types';
 const emptyFacts = {
-  departure: null,
-  destination: null,
-  travelDates: null,
-  travelers: null,
+  request: null,
+  location: null,
+  date: null,
+  quantity: null,
   budget: null,
 };
 export const sampleAnalyses: Record<
@@ -17,14 +17,18 @@ export const sampleAnalyses: Record<
     intent: 'availability',
     facts: {
       ...emptyFacts,
-      departure: { value: 'Erbil', messageId: 'sample-msg-1', quote: 'from Erbil to Istanbul' },
-      destination: {
+      request: {
+        value: 'two return tickets',
+        messageId: 'sample-msg-1',
+        quote: 'two return tickets',
+      },
+      location: {
         value: 'Istanbul',
         messageId: 'sample-msg-1',
         quote: 'from Erbil to Istanbul',
       },
-      travelDates: { value: 'October 22–28', messageId: 'sample-msg-1', quote: 'October 22–28' },
-      travelers: { value: 'two', messageId: 'sample-msg-1', quote: 'two return tickets' },
+      date: { value: 'October 22–28', messageId: 'sample-msg-1', quote: 'October 22–28' },
+      quantity: { value: 'two', messageId: 'sample-msg-1', quote: 'two return tickets' },
     },
   },
   'sample-rebaz': {
@@ -34,7 +38,7 @@ export const sampleAnalyses: Record<
     intent: 'support',
     facts: {
       ...emptyFacts,
-      destination: { value: 'دوبەی', messageId: 'sample-msg-4', quote: 'ڤیزای گەشتیاری دوبەی' },
+      location: { value: 'دوبەی', messageId: 'sample-msg-4', quote: 'ڤیزای گەشتیاری دوبەی' },
     },
   },
   'sample-noor': {
@@ -47,14 +51,19 @@ export const sampleAnalyses: Record<
   'sample-dilan': {
     copyKey: 'dilan',
     language: 'ckb',
-    services: ['package'],
+    services: ['furniture', 'delivery'],
     intent: 'availability',
     facts: {
       ...emptyFacts,
-      destination: {
-        value: 'ئیستانبوڵ',
+      request: {
+        value: 'قەنەفەی سێ کەسی',
         messageId: 'sample-msg-7',
-        quote: 'پاکێجی گەشت بۆ ئیستانبوڵ',
+        quote: 'قەنەفەی سێ کەسیتان هەیە؟',
+      },
+      location: {
+        value: 'هەولێر',
+        messageId: 'sample-msg-7',
+        quote: 'گەیاندن بۆ هەولێر دەکەن؟',
       },
     },
   },

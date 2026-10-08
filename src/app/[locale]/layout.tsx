@@ -5,8 +5,8 @@ import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
 import '../globals.css';
 export const metadata: Metadata = {
-  title: { default: 'Datamine — A workspace for travel people', template: '%s · Datamine' },
-  description: 'Bring your travel agencies, teams, and WhatsApp conversations together.',
+  title: { default: 'Datamine — A workspace for every business', template: '%s · Datamine' },
+  description: 'Bring your businesses, teams, and WhatsApp conversations together.',
   robots: { index: false, follow: false },
 };
 export default async function LocaleLayout({

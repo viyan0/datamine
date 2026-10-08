@@ -82,6 +82,11 @@ export const agencies = pgTable('agencies', {
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
   locale: text('locale').default('en').notNull(),
+  industry: text('industry').default('General business').notNull(),
+  categories: jsonb('categories')
+    .$type<string[]>()
+    .default(['general', 'sales', 'support', 'booking'])
+    .notNull(),
   createdAt: createdAt(),
 });
 export const memberships = pgTable(
@@ -216,5 +221,45 @@ export const auditEvents = pgTable('audit_events', {
   actorId: text('actor_id').references(() => user.id),
   action: text('action').notNull(),
   details: jsonb('details').$type<Record<string, string>>().notNull().default({}),
+  createdAt: createdAt(),
+});
+export const enrollmentLinks = pgTable('enrollment_links', {
+  id: text('id').primaryKey(),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  codeHash: text('code_hash'),
+  codeExpiresAt: timestamp('code_expires_at', { withTimezone: true }),
+  codeSentAt: timestamp('code_sent_at', { withTimezone: true }),
+  sends: integer('sends').default(0).notNull(),
+  attempts: integer('attempts').default(0).notNull(),
+  verifiedAt: timestamp('verified_at', { withTimezone: true }),
+  sessionHash: text('session_hash').unique(),
+  sessionExpiresAt: timestamp('session_expires_at', { withTimezone: true }),
+  createdAt: createdAt(),
+});
+export const sharedProfiles = pgTable('shared_profiles', {
+  id: text('id').primaryKey(),
+  phone: text('phone').notNull().unique(),
+  name: text('name').notNull(),
+  language: text('language').notNull(),
+  destination: text('destination').default('').notNull(),
+  interests: jsonb('interests').$type<string[]>().notNull().default([]),
+  status: text('status').default('active').notNull(),
+  consentVersion: text('consent_version').notNull(),
+  consentAt: timestamp('consent_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+export const profileEvents = pgTable('profile_events', {
+  id: text('id').primaryKey(),
+  profileId: text('profile_id')
+    .notNull()
+    .references(() => sharedProfiles.id),
+  action: text('action').notNull(),
+  noticeVersion: text('notice_version').notNull(),
+  locale: text('locale').notNull(),
+  channel: text('channel').default('customer_portal').notNull(),
   createdAt: createdAt(),
 });

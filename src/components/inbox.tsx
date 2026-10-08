@@ -18,12 +18,12 @@ import { demoConversations, demoMessages } from '@/lib/demo-inbox';
 import {
   inquiryStatuses,
   replyWindowOpen,
-  services,
   type Conversation,
   type CustomerFields,
   type InboxMessage,
 } from '@/lib/inbox-types';
 import { Button } from './ui/button';
+import { EnrollmentLink } from './enrollment-link';
 import { ConversationAnalysis } from './conversation-analysis';
 
 async function api(url: string, init?: RequestInit) {
@@ -70,6 +70,7 @@ export function AgencyInbox({ data, demo }: { data: WorkspaceData; demo: boolean
         <InboxThreads
           key={agencyId}
           agencyId={agencyId}
+          categories={agency.categories}
           demo={demo}
           editable={['owner', 'admin', 'agent'].includes(agency.role)}
         />
@@ -86,10 +87,12 @@ function InboxThreads({
   agencyId,
   demo,
   editable,
+  categories,
 }: {
   agencyId: string;
   demo: boolean;
   editable: boolean;
+  categories: string[];
 }) {
   const t = useTranslations('crm');
   const initial = demo ? demoConversations.filter((c) => c.agencyId === agencyId) : [];
@@ -170,7 +173,7 @@ function InboxThreads({
                 className={filter === s ? 'active' : ''}
                 onClick={() => setFilter(s)}
               >
-                {t(s)}
+                {t.has(s) ? t(s) : s}
               </button>
             ))}
           </div>
@@ -200,7 +203,7 @@ function InboxThreads({
                     {c.preview || t('mediaMessage')}
                   </span>
                   <span className="thread-tags">
-                    {t(c.service)}
+                    {t.has(c.service) ? t(c.service) : c.service}
                     {c.destination && <> · {c.destination}</>}
                   </span>
                 </span>
@@ -221,6 +224,7 @@ function InboxThreads({
             conversation={current}
             demo={demo}
             editable={editable}
+            categories={categories}
             base={base}
             revision={revision}
             sampleMessages={sampleHistory[current.id] || []}
@@ -248,6 +252,7 @@ function ConversationView({
   conversation: c,
   demo,
   editable,
+  categories,
   base,
   revision,
   sampleMessages,
@@ -258,6 +263,7 @@ function ConversationView({
   conversation: Conversation;
   demo: boolean;
   editable: boolean;
+  categories: string[];
   base: string;
   revision: number;
   sampleMessages: InboxMessage[];
@@ -451,9 +457,11 @@ function ConversationView({
           conversation={c}
           demo={demo}
           editable={editable}
+          categories={categories}
           url={url}
           onUpdate={onUpdate}
         />
+        {editable && <EnrollmentLink url={url} demo={demo} />}
       </aside>
     </>
   );
@@ -462,12 +470,14 @@ function CustomerForm({
   conversation: c,
   demo,
   editable,
+  categories,
   url,
   onUpdate,
 }: {
   conversation: Conversation;
   demo: boolean;
   editable: boolean;
+  categories: string[];
   url: string;
   onUpdate: (fields: Partial<Conversation>) => void;
 }) {
@@ -519,9 +529,9 @@ function CustomerForm({
             value={fields.service}
             onChange={(e) => edit('service', e.target.value as CustomerFields['service'])}
           >
-            {services.map((s) => (
+            {[...new Set([...categories, fields.service])].map((s) => (
               <option key={s} value={s}>
-                {t(s)}
+                {t.has(s) ? t(s) : s}
               </option>
             ))}
           </select>
@@ -545,7 +555,7 @@ function CustomerForm({
           >
             {inquiryStatuses.map((s) => (
               <option key={s} value={s}>
-                {t(s)}
+                {t.has(s) ? t(s) : s}
               </option>
             ))}
           </select>

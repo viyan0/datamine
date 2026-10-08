@@ -1,9 +1,10 @@
 export const analysisModel = 'claude-haiku-5-5';
-export const analysisVersion = 1;
+export const analysisVersion = 2;
 export const analysisIntents = [
   'price',
   'availability',
   'booking',
+  'order',
   'change',
   'cancellation',
   'support',
@@ -12,23 +13,17 @@ export const analysisIntents = [
   'unclear',
 ] as const;
 export const analysisLanguages = ['en', 'ar', 'ckb', 'mixed', 'other', 'unknown'] as const;
-export const factNames = [
-  'departure',
-  'destination',
-  'travelDates',
-  'travelers',
-  'budget',
-] as const;
+export const factNames = ['request', 'location', 'date', 'quantity', 'budget'] as const;
 export type SourceMessage = { id: string; direction: string; body: string; timestamp: string };
-export type TravelFact = { value: string; messageId: string; quote: string } | null;
+export type CustomerFact = { value: string; messageId: string; quote: string } | null;
 export type AnalysisResult = {
   language: (typeof analysisLanguages)[number];
-  services: ('other' | 'flight' | 'visa' | 'hotel' | 'package' | 'transfer')[];
+  services: string[];
   intent: (typeof analysisIntents)[number];
   summary: string;
   nextStep: string;
   reviewNote: string | null;
-  facts: Record<(typeof factNames)[number], TravelFact>;
+  facts: Record<(typeof factNames)[number], CustomerFact>;
 };
 export type SavedAnalysis = {
   result: AnalysisResult;

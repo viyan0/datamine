@@ -9,6 +9,8 @@ export type WorkspaceData = {
     name: string;
     slug: string;
     locale: string;
+    industry: string;
+    categories: string[];
     role: string;
     createdAt: string;
   }[];
@@ -46,6 +48,8 @@ export async function loadWorkspace(current: {
       name: agencies.name,
       slug: agencies.slug,
       locale: agencies.locale,
+      industry: agencies.industry,
+      categories: agencies.categories,
       role: memberships.role,
       createdAt: agencies.createdAt,
     })

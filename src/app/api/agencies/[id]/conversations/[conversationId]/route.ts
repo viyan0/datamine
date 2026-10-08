@@ -5,7 +5,8 @@ import { conversations } from '@/db/schema';
 import { requireAgency, HttpError } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { conversationMessages, getConversation } from '@/lib/inbox';
-import { inquiryStatuses, services } from '@/lib/inbox-types';
+import { inquiryStatuses } from '@/lib/inbox-types';
+import { categorySchema } from '@/lib/business';
 type Context = { params: Promise<{ id: string; conversationId: string }> };
 export async function GET(_request: Request, { params }: Context) {
   try {
@@ -30,7 +31,7 @@ export async function PATCH(request: Request, { params }: Context) {
     const fields = z
       .object({
         name: z.string().trim().min(1).max(120),
-        service: z.enum(services),
+        service: categorySchema,
         destination: z.string().trim().max(160),
         inquiryStatus: z.enum(inquiryStatuses),
         note: z.string().trim().max(2000),

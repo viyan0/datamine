@@ -1,0 +1,2 @@
+ALTER TABLE "agencies" ADD COLUMN "industry" text DEFAULT 'General business' NOT NULL;--> statement-breakpoint
+ALTER TABLE "agencies" ADD COLUMN "categories" jsonb DEFAULT '["general","sales","support","booking"]'::jsonb NOT NULL;

@@ -4,6 +4,8 @@ import { getPool } from '../src/db/index';
 import { encrypt } from '../src/lib/security';
 import { replyToConversation } from '../src/lib/inbox';
 import { analyzeConversation, getAnalysisState } from '../src/lib/analysis';
+import { sendEnrollmentCode } from '../src/lib/enrollment';
+import { digest } from '../src/lib/security';
 const base = process.env.BETTER_AUTH_URL || 'http://localhost:3000';
 if (
   new URL(base).hostname !== 'localhost' ||
@@ -75,7 +77,13 @@ try {
   const a = await req(
     '/api/agencies',
     'POST',
-    { name: `Test Agency A ${suffix}`, slug: `test-a-${suffix}`, locale: 'en' },
+    {
+      name: `Test Agency A ${suffix}`,
+      slug: `test-a-${suffix}`,
+      locale: 'en',
+      industry: 'Travel',
+      categories: ['flight', 'visa', 'hotel', 'other'],
+    },
     owner,
   );
   const b = await req(
@@ -429,14 +437,14 @@ try {
             nextStep: 'Confirm travel dates.',
             reviewNote: 'The exact date and year need confirmation.',
             facts: {
-              departure: null,
-              destination: {
+              request: null,
+              location: {
                 value: 'Istanbul',
                 quote: invalid ? 'invented quote' : 'Istanbul',
                 messageId: evidenceId,
               },
-              travelDates: { value: 'next Friday', quote: 'next Friday', messageId: evidenceId },
-              travelers: { value: 'Two', quote: 'Two travelers', messageId: evidenceId },
+              date: { value: 'next Friday', quote: 'next Friday', messageId: evidenceId },
+              quantity: { value: 'Two', quote: 'Two travelers', messageId: evidenceId },
               budget: null,
             },
           }),
@@ -452,8 +460,36 @@ try {
     await analyzeConversation(a.data.id, thread.id, 'en');
     assert.equal(aiCalls, 1, 'Unchanged inputs reuse the saved analysis');
     const persisted = await req(`${threadPath}/analysis`, 'GET', undefined, viewer);
-    assert.equal(persisted.data.analysis.result.facts.destination.value, 'Istanbul');
+    assert.equal(persisted.data.analysis.result.facts.location.value, 'Istanbul');
     assert.equal(persisted.data.stale, false);
+    assert.equal(
+      (
+        await req(
+          '/api/agencies/' + a.data.id,
+          'PATCH',
+          { industry: 'Travel', categories: ['flight', 'visa', 'hotel', 'other', 'support'] },
+          owner,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await getAnalysisState(a.data.id, thread.id)).stale,
+      true,
+      'Business configuration changes invalidate analysis',
+    );
+    assert.equal(
+      (
+        await req(
+          '/api/agencies/' + a.data.id,
+          'PATCH',
+          { industry: 'Travel', categories: ['flight', 'visa', 'hotel', 'other'] },
+          owner,
+        )
+      ).status,
+      200,
+    );
+    assert.equal((await getAnalysisState(a.data.id, thread.id)).stale, false);
     assert.equal(
       (await req(`${threadPath}/analysis`, 'POST', { locale: 'en' }, owner)).status,
       200,
@@ -506,6 +542,323 @@ try {
     if (originalModel === undefined) delete process.env.ANTHROPIC_MODEL;
     else process.env.ANTHROPIC_MODEL = originalModel;
   }
+  // Phase 4: public verification, explicit consent, private business data, and withdrawal.
+  assert.equal((await req('/api/customers')).status, 401);
+  assert.equal((await req('/api/customers', 'GET', undefined, viewer)).status, 403);
+  assert.equal((await req('/en/app/customers', 'GET', undefined, viewer)).status, 404);
+  assert.equal(
+    (await req(`${threadPath}/enrollment`, 'POST', { locale: 'en' }, viewer)).status,
+    403,
+  );
+  assert.equal(
+    (
+      await req(
+        `/api/agencies/${b.data.id}/conversations/${thread.id}/enrollment`,
+        'POST',
+        { locale: 'en' },
+        owner,
+      )
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await req(
+        `/api/agencies/${a.data.id}`,
+        'PATCH',
+        { industry: 'Furniture', categories: ['furniture'] },
+        viewer,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await req(
+        `/api/agencies/${b.data.id}`,
+        'PATCH',
+        { industry: 'Furniture', categories: ['furniture', 'delivery', 'پشتیوانی'] },
+        owner,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await req(
+        `/api/agencies/${b.data.id}`,
+        'PATCH',
+        { industry: 'Furniture', categories: [] },
+        owner,
+      )
+    ).status,
+    400,
+  );
+  const phone = `964${Date.now().toString().slice(-10)}`;
+  await pool.query(
+    "UPDATE conversations SET contact_phone=$1,last_inbound_at=now()-interval '1 minute' WHERE id=$2",
+    [phone, thread.id],
+  );
+  const link = await req(`${threadPath}/enrollment`, 'POST', { locale: 'en' }, owner);
+  assert.equal(link.status, 201);
+  const enrollmentToken = new URL(link.data.url).hash.slice(1);
+  assert.equal(new URL(link.data.url).search, '');
+  assert.equal(
+    (await req(`${threadPath}/enrollment`, 'POST', { locale: 'en' }, owner)).status,
+    429,
+  );
+  const info = await req('/api/customer/access', 'POST', { token: enrollmentToken });
+  assert.equal(info.status, 200);
+  assert.equal(info.data.maskedPhone, `•••• ${phone.slice(-4)}`);
+  assert.deepEqual(Object.keys(info.data).sort(), ['agency', 'maskedPhone']);
+  assert.equal((await req('/api/customer/profile')).status, 401);
+  const profile = {
+    name: 'Local enrolled customer',
+    language: 'ckb',
+    interests: ['furniture', 'appointment'],
+    destination: 'Home office',
+    locale: 'en',
+  };
+  assert.equal(
+    (await req('/api/customer/profile', 'POST', { ...profile, consent: true }, owner)).status,
+    401,
+    'Staff session cannot replace customer verification',
+  );
+  assert.equal(
+    (await req('/api/customer/verify', 'POST', { token: enrollmentToken, code: '000000' })).status,
+    400,
+  );
+  let verificationCode = '',
+    codeSends = 0,
+    codeDelivery = 'accepted';
+  globalThis.fetch = async (input, init) => {
+    if (!String(input).startsWith('https://graph.facebook.com/')) return originalFetch(input, init);
+    codeSends++;
+    const payload = JSON.parse(String(init?.body));
+    assert.equal(payload.to, phone);
+    verificationCode = payload.text.body.match(/\b\d{6}\b/)[0];
+    if (codeDelivery === 'uncertain') throw new Error('Simulated network uncertainty');
+    if (codeDelivery === 'failed') return Response.json({ error: { code: 100 } }, { status: 400 });
+    return Response.json({ messages: [{ id: `wamid.code-${suffix}-${codeSends}` }] });
+  };
+  try {
+    const sent = await sendEnrollmentCode(enrollmentToken, 'en');
+    assert.deepEqual(sent, { uncertain: false });
+    await assert.rejects(sendEnrollmentCode(enrollmentToken, 'en'), { code: 'codeWait' });
+    assert.equal(codeSends, 1);
+    const storedCode = (
+      await pool.query('SELECT code_hash FROM enrollment_links WHERE token_hash=$1', [
+        digest(enrollmentToken),
+      ])
+    ).rows[0].code_hash;
+    assert.notEqual(storedCode, verificationCode);
+    assert.ok(
+      !(await pool.query('SELECT body FROM messages WHERE connection_id=$1', [idA])).rows.some(
+        (r) => r.body?.includes(verificationCode),
+      ),
+      'OTP is excluded from staff message history',
+    );
+    assert.equal(
+      (await req('/api/customer/verify', 'POST', { token: enrollmentToken, code: '000000' }))
+        .status,
+      400,
+    );
+    const verified = await req('/api/customer/verify', 'POST', {
+      token: enrollmentToken,
+      code: verificationCode,
+    });
+    assert.equal(verified.status, 200);
+    assert.ok(verified.cookie.startsWith('datamine-customer='));
+    assert.equal(
+      (
+        await req('/api/customer/verify', 'POST', {
+          token: enrollmentToken,
+          code: verificationCode,
+        })
+      ).status,
+      400,
+      'Codes are single-use',
+    );
+    const beforeConsent = await req('/api/customer/profile', 'GET', undefined, verified.cookie);
+    assert.equal(beforeConsent.data.phone, phone);
+    assert.equal(beforeConsent.data.profile, null, 'Verification does not enroll');
+    assert.equal(
+      (await req('/api/customer/profile', 'POST', profile, verified.cookie)).status,
+      400,
+      'Consent must be explicit',
+    );
+    const joined = await req(
+      '/api/customer/profile',
+      'POST',
+      { ...profile, consent: true, phone: '111111111', note: 'Do not import' },
+      verified.cookie,
+    );
+    assert.equal(joined.status, 200);
+    assert.equal(joined.data.profile.phone, phone, 'Customer cannot choose another verified phone');
+    assert.equal(joined.data.profile.note, undefined);
+    assert.equal(joined.data.profile.status, 'active');
+    const directory = await req('/api/customers', 'GET', undefined, owner);
+    const entry = directory.data.profiles.find((p: { phone: string }) => p.phone === phone);
+    assert.equal(entry.name, profile.name);
+    assert.ok(!JSON.stringify(entry).includes(fields.note));
+    assert.deepEqual(
+      Object.keys(entry).sort(),
+      [
+        'id',
+        'phone',
+        'name',
+        'language',
+        'destination',
+        'interests',
+        'status',
+        'consentAt',
+        'updatedAt',
+      ].sort(),
+    );
+    assert.equal(
+      (await req('/api/customer/opt-out', 'POST', { locale: 'en' }, verified.cookie)).data.profile
+        .status,
+      'optedOut',
+    );
+    await req('/api/customer/opt-out', 'POST', { locale: 'en' }, verified.cookie);
+    const edited = await req(
+      '/api/customer/preferences',
+      'POST',
+      { ...profile, name: 'Updated by customer' },
+      verified.cookie,
+    );
+    assert.equal(
+      edited.data.profile.status,
+      'optedOut',
+      'Preference edits never silently re-enroll',
+    );
+    const rejoined = await req(
+      '/api/customer/profile',
+      'POST',
+      { ...profile, consent: true },
+      verified.cookie,
+    );
+    assert.equal(
+      rejoined.data.profile.id,
+      joined.data.profile.id,
+      'Same phone has one shared profile',
+    );
+    assert.equal(rejoined.data.profile.status, 'active');
+    const events = await pool.query(
+      'SELECT action,notice_version FROM profile_events WHERE profile_id=$1',
+      [entry.id],
+    );
+    assert.equal(events.rows.filter((e) => e.action === 'optedOut').length, 1);
+    assert.ok(events.rows.every((e) => e.notice_version === '2026-10-08-v1'));
+    await pool.query(
+      "UPDATE enrollment_links SET session_expires_at=now()-interval '1 minute' WHERE token_hash=$1",
+      [digest(enrollmentToken)],
+    );
+    assert.equal(
+      (await req('/api/customer/profile', 'GET', undefined, verified.cookie)).status,
+      401,
+    );
+    assert.equal(
+      (await req('/api/customer/preferences', 'POST', profile, verified.cookie)).status,
+      401,
+    );
+
+    // A new link in another business to the same phone can manage the same consented profile.
+    const secondThread = (
+      await pool.query('SELECT id FROM conversations WHERE connection_id=$1', [idB])
+    ).rows[0].id;
+    await pool.query(
+      "UPDATE conversations SET contact_phone=$1,last_inbound_at=now()-interval '1 minute' WHERE id=$2",
+      [phone, secondThread],
+    );
+    const secondPath = `/api/agencies/${b.data.id}/conversations/${secondThread}/enrollment`;
+    const secondLink = await req(secondPath, 'POST', { locale: 'en' }, owner);
+    const secondToken = new URL(secondLink.data.url).hash.slice(1);
+    await pool.query(
+      "UPDATE conversations SET last_inbound_at=now()-interval '25 hours' WHERE id=$1",
+      [secondThread],
+    );
+    assert.equal(
+      (await req('/api/customer/code', 'POST', { token: secondToken, locale: 'en' })).data.error,
+      'codeWindowClosed',
+    );
+    await pool.query(
+      "UPDATE conversations SET last_inbound_at=now()-interval '1 minute' WHERE id=$1",
+      [secondThread],
+    );
+    codeDelivery = 'failed';
+    await assert.rejects(sendEnrollmentCode(secondToken, 'en'), { code: 'codeSendFailed' });
+    assert.equal(
+      (await req('/api/customer/verify', 'POST', { token: secondToken, code: verificationCode }))
+        .status,
+      400,
+      'Rejected code cannot verify',
+    );
+    await pool.query(
+      "UPDATE enrollment_links SET code_sent_at=now()-interval '2 minutes' WHERE token_hash=$1",
+      [digest(secondToken)],
+    );
+    codeDelivery = 'uncertain';
+    assert.deepEqual(await sendEnrollmentCode(secondToken, 'en'), { uncertain: true });
+    await assert.rejects(sendEnrollmentCode(secondToken, 'en'), { code: 'codeWait' });
+    const sharedAccess = await req('/api/customer/verify', 'POST', {
+      token: secondToken,
+      code: verificationCode,
+    });
+    assert.equal(sharedAccess.status, 200);
+    assert.equal(
+      (await req('/api/customer/profile', 'GET', undefined, sharedAccess.cookie)).data.profile.id,
+      entry.id,
+    );
+
+    // New link for lockout and expiry checks, using only the local fixture row.
+    await pool.query(
+      "UPDATE enrollment_links SET created_at=now()-interval '2 hours' WHERE conversation_id=$1",
+      [secondThread],
+    );
+    const lockedLink = await req(secondPath, 'POST', { locale: 'en' }, owner);
+    const lockedToken = new URL(lockedLink.data.url).hash.slice(1);
+    codeDelivery = 'accepted';
+    await sendEnrollmentCode(lockedToken, 'en');
+    for (let i = 0; i < 5; i++)
+      assert.equal(
+        (await req('/api/customer/verify', 'POST', { token: lockedToken, code: '000000' })).status,
+        400,
+      );
+    assert.equal(
+      (await req('/api/customer/verify', 'POST', { token: lockedToken, code: verificationCode }))
+        .data.error,
+      'enrollmentLocked',
+    );
+    await assert.rejects(sendEnrollmentCode(lockedToken, 'en'), { code: 'enrollmentLocked' });
+    await pool.query(
+      "UPDATE enrollment_links SET attempts=0, code_expires_at=now()-interval '1 minute' WHERE token_hash=$1",
+      [digest(lockedToken)],
+    );
+    assert.equal(
+      (await req('/api/customer/verify', 'POST', { token: lockedToken, code: verificationCode }))
+        .data.error,
+      'codeInvalid',
+    );
+    await pool.query(
+      "UPDATE enrollment_links SET expires_at=now()-interval '1 minute' WHERE token_hash=$1",
+      [digest(lockedToken)],
+    );
+    assert.equal((await req('/api/customer/access', 'POST', { token: lockedToken })).status, 410);
+    await assert.rejects(sendEnrollmentCode(lockedToken, 'en'), { code: 'enrollmentExpired' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  for (const locale of ['en', 'ar', 'ckb']) {
+    assert.equal((await req(`/${locale}/enroll/demo`)).status, 200);
+    assert.equal((await req(`/${locale}/demo/customers`)).status, 200);
+  }
+  const crossOriginConsent = await fetch(base + '/api/customer/profile', {
+    method: 'POST',
+    headers: { Origin: 'https://untrusted.example', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...profile, consent: true }),
+  });
+  assert.equal(crossOriginConsent.status, 403);
   const foreign = await fetch(base + '/api/agencies', {
     method: 'POST',
     headers: {
@@ -517,7 +870,7 @@ try {
   });
   assert.equal(foreign.status, 403);
   console.log(
-    'PASS: auth, locales, agency isolation, inbox edits, delivery tracking, AI persistence/cache, evidence validation, concurrent analysis, stale results, and unchanged staff fields. Meta and Anthropic were mocked; no external messages or AI requests were sent.',
+    'PASS: auth, locales, business isolation/settings, inbox, delivery tracking, AI/cache/evidence, OTP expiry/replay/throttling, explicit consent, shared profile deduplication, opt-out, and private-data boundaries. Meta and Anthropic were mocked; no external messages or AI requests were sent.',
   );
 } finally {
   await pool.end();

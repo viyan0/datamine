@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { ArrowUpRight } from 'lucide-react';
 export function Brand({ light = false }: { light?: boolean }) {
   return (
@@ -15,6 +16,7 @@ export function Brand({ light = false }: { light?: boolean }) {
   );
 }
 export function JourneyArt({ compact = false }: { compact?: boolean }) {
+  const t = useTranslations();
   return (
     <div className={`journey-art ${compact ? 'compact' : ''}`} aria-hidden="true">
       <svg viewBox="0 0 600 350" fill="none">
@@ -44,15 +46,15 @@ export function JourneyArt({ compact = false }: { compact?: boolean }) {
         <circle cx="126" cy="241" r="18" stroke="currentColor" opacity=".25" />
         <circle cx="484" cy="112" r="7" fill="currentColor" />
         <circle cx="484" cy="112" r="18" stroke="currentColor" opacity=".25" />
-        <path d="m297 154 41-9-13 17 6 16-10 1-9-14-15-2z" fill="currentColor" />
+        <path d="M284 137h42v28h-20l-13 11v-11h-9z" fill="currentColor" />
       </svg>
       {!compact && (
         <>
           <div className="art-tag art-tag-one">
-            <span className="small-dot" /> ERB <ArrowUpRight size={14} /> <b>DXB</b>
+            <span className="small-dot" /> {t('conversationsArt')} <ArrowUpRight size={14} />
           </div>
           <div className="art-tag art-tag-two">
-            <span className="small-dot" /> ISU <ArrowUpRight size={14} /> <b>IST</b>
+            <span className="small-dot" /> {t('customers')} <ArrowUpRight size={14} />
           </div>
         </>
       )}

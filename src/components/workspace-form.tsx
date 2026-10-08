@@ -37,7 +37,18 @@ export function WorkspaceForm({
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...payload, ...(kind === 'invite' ? { locale } : {}) }),
+          body: JSON.stringify({
+            ...payload,
+            ...(kind === 'invite' ? { locale } : {}),
+            ...(kind === 'agency'
+              ? {
+                  categories: String(payload.categories)
+                    .split(/[,،]/)
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                }
+              : {}),
+          }),
         },
       );
       const result = await response.json();
@@ -115,6 +126,25 @@ export function WorkspaceForm({
                 />
               </label>
               <p className="form-hint">{t('slugHint')}</p>
+              <label>
+                {t('categoriesLabel')}
+                <input
+                  name="categories"
+                  defaultValue="general, sales, support, booking"
+                  required
+                  maxLength={720}
+                />
+              </label>
+              <p className="form-hint">{t('categoriesHint')}</p>
+              <label>
+                {t('businessType')}
+                <input
+                  name="industry"
+                  placeholder={t('businessTypeHint')}
+                  maxLength={100}
+                  required
+                />
+              </label>
               <label>
                 {t('preferredLanguage')}
                 <select name="locale" defaultValue={locale}>

@@ -35,13 +35,13 @@ Existing database/API names such as `agencies`, `service`, and `destination` are
 
 ## Automatic AI analysis
 
-New messages schedule analysis automatically; staff do not click an Analyze button. PostgreSQL stores pending jobs. On Vercel, a managed queue wakes a bounded processor and schedules retries only while work remains; a daily recovery job catches missed wakeups. Locally and on Render, a companion process starts with the app. Both call **claude-haiku-5-5** through Anthropic's Messages API with low effort, disabled thinking, and [structured JSON output](https://platform.claude.com/docs/en/build-with-claude/structured-outputs). No fallback model or Redis server is required.
+New messages schedule analysis automatically; staff do not click an Analyze button. PostgreSQL stores pending jobs. On Vercel, a managed queue wakes a bounded processor and schedules retries only while work remains; a daily recovery job catches missed wakeups. Locally and on Render, a companion process starts with the app. Both call **anthropic/claude-haiku-5.5** through OpenRouter with reasoning disabled and [structured JSON output](https://openrouter.ai/docs/guides/features/structured-outputs). Routing requires support for the requested parameters and excludes providers that collect data. The same client handles conversation analysis and offer matching, with no fallback model or extra server.
 
 Haiku chooses category and intent labels itself, along with the useful facts for that business and conversation. Business category hints are optional and do not constrain the output. The category, product/service/topic, and inquiry status update automatically. Extracted facts must identify an inbound source message and an exact supporting quote; the value must occur in that quote. Unknown facts are omitted. Names and private notes are never overwritten. Manual category/topic/status corrections are retained until staff restore automatic details.
 
-Analysis includes at most 30 recent text messages, 16,000 characters total, and 3,000 per message. Connection secrets, contact metadata, and private notes are excluded; customer text itself is sent to Anthropic. Saved results include source IDs, model/schema version, timing, and token usage. Source hashes, revision checks, and 90-second leases prevent duplicate or stale work. Errors preserve prior results and retry with backoff; media-only conversations wait for text. The inbox polls for updates every four seconds while visible.
+Analysis includes at most 30 recent text messages, 16,000 characters total, and 3,000 per message. Connection secrets, contact metadata, and private notes are excluded; customer text itself is sent through OpenRouter to Claude. Saved results include source IDs, model/schema version, timing, and token usage. Source hashes, revision checks, and 90-second leases prevent duplicate or stale work. Errors preserve prior results and retry with backoff; media-only conversations wait for text. The inbox polls for updates every four seconds while visible.
 
-Set ANTHROPIC_API_KEY to enable live analysis. Without it, the interface shows setup guidance. Public demo insights are prepared fixtures displayed automatically; they do not analyze arbitrary added sample replies or prove model accuracy.
+Set OPENROUTER_API_KEY to enable live analysis. Without it, the interface shows setup guidance. Public demo insights are prepared fixtures displayed automatically; they do not analyze arbitrary added sample replies or prove model accuracy.
 
 ## Offers and campaigns
 
@@ -72,8 +72,8 @@ Use Node.js 24 and npm. Install dependencies with `npm ci`. Copy `.env.example` 
 | `BOOTSTRAP_ADMIN_PASSWORD` | Strong initial password; at least 12 characters |
 | `BOOTSTRAP_ADMIN_NAME` | Initial owner's display name |
 | `META_GRAPH_VERSION` | Supported Meta Graph version, default `v23.0` |
-| `ANTHROPIC_MODEL` | `claude-haiku-5-5`; other model values disable analysis |
-| `ANTHROPIC_API_KEY` | Server-only Anthropic key with access to Haiku 5.5; optional for the sample demo |
+| `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5`; other model values disable analysis |
+| `OPENROUTER_API_KEY` | Server-only OpenRouter key with credits and access to Haiku 5.5; optional for the sample demo |
 | `CRON_SECRET` | Random secret for Vercel's daily job recovery and authenticated queue wakeups |
 
 Generate secrets locally with Node's `crypto.randomBytes(32).toString('hex')`. Store them in your environment or password manager.
@@ -104,7 +104,7 @@ node --env-file=.env.local --import tsx scripts/smoke.ts
 node --env-file=.env.local --import tsx scripts/smoke-phase5.ts
 ```
 
-This exercises login, invitations, business isolation/settings, three locales, signed webhooks, inbox edits, delivery safeguards, AI persistence/cache/evidence, verification expiry/replay/throttling, explicit consent, shared profile deduplication, opt-out, and private-data boundaries. The Phase 5 suite additionally checks automatic processing, retries/recovery, manual overrides, dynamic labels, campaign privacy, exact-template matching, consent changes, deduplicated delivery, uncertain outcomes, and opt-outs. Meta and Anthropic requests are mocked. The suites create test fixtures and **refuse to run against a remote deployment**. Production health is checked separately through `/api/health`.
+This exercises login, invitations, business isolation/settings, three locales, signed webhooks, inbox edits, delivery safeguards, AI persistence/cache/evidence, verification expiry/replay/throttling, explicit consent, shared profile deduplication, opt-out, and private-data boundaries. The Phase 5 suite additionally checks automatic processing, retries/recovery, manual overrides, dynamic labels, campaign privacy, exact-template matching, consent changes, deduplicated delivery, uncertain outcomes, and opt-outs. Meta and OpenRouter requests are mocked. The suites create test fixtures and **refuse to run against a remote deployment**. Production health is checked separately through `/api/health`.
 
 ## Deployment
 

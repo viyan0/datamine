@@ -37,9 +37,9 @@ services:
         value: Workspace owner
       - key: META_GRAPH_VERSION
         value: v23.0
-      - key: ANTHROPIC_MODEL
-        value: claude-haiku-5-5
-      - key: ANTHROPIC_API_KEY
+      - key: OPENROUTER_MODEL
+        value: anthropic/claude-haiku-5.5
+      - key: OPENROUTER_API_KEY
         sync: false
 databases:
   - name: datamine-db

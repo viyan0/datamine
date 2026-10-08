@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { categorySchema, type BusinessContext } from './business';
-import { analysisLanguages, analysisModel, type SourceMessage } from './analysis-types';
+import { analysisLanguages, type SourceMessage } from './analysis-types';
+
+export const openRouterModel = 'anthropic/claude-haiku-5.5';
 
 const evidence = z.strictObject({
   value: z.string().trim().min(1).max(200),
@@ -56,8 +58,8 @@ function providerSchema(value: unknown): unknown {
 }
 export function analysisConfigured() {
   return (
-    !!process.env.ANTHROPIC_API_KEY?.trim() &&
-    (!process.env.ANTHROPIC_MODEL || process.env.ANTHROPIC_MODEL === analysisModel)
+    !!process.env.OPENROUTER_API_KEY?.trim() &&
+    (!process.env.OPENROUTER_MODEL || process.env.OPENROUTER_MODEL === openRouterModel)
   );
 }
 export async function requestHaiku<T extends z.ZodType>(
@@ -70,30 +72,31 @@ export async function requestHaiku<T extends z.ZodType>(
   const started = Date.now();
   let response: Response;
   try {
-    response = await fetch('https://api.anthropic.com/v1/messages', {
+    response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'x-api-key': process.env.ANTHROPIC_API_KEY!,
-        'anthropic-version': '2023-06-01',
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY!.trim()}`,
         'Content-Type': 'application/json',
       },
       signal: AbortSignal.timeout(45000),
       cache: 'no-store',
       body: JSON.stringify({
-        model: analysisModel,
+        model: openRouterModel,
         max_tokens: maxTokens,
-        thinking: { type: 'disabled' },
-        system,
+        reasoning: { enabled: false },
+        provider: { require_parameters: true, data_collection: 'deny' },
         messages: [
+          { role: 'system', content: system },
           {
             role: 'user',
             content: JSON.stringify(input),
           },
         ],
-        output_config: {
-          effort: 'low',
-          format: {
-            type: 'json_schema',
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'datamine_result',
+            strict: true,
             schema: providerSchema(z.toJSONSchema(schema)),
           },
         },
@@ -103,27 +106,33 @@ export async function requestHaiku<T extends z.ZodType>(
     throw new AnalysisError('analysisUnavailable');
   }
   if (!response.ok) {
-    if ([401, 403, 404].includes(response.status))
+    if ([401, 402, 403, 404].includes(response.status))
       throw new AnalysisError('analysisNotConfigured', 503);
     if (response.status === 429) throw new AnalysisError('analysisRateLimited', 429);
     throw new AnalysisError('analysisUnavailable');
   }
   try {
     const data = (await response.json()) as {
-      stop_reason?: string;
-      content?: { type: string; text?: string }[];
-      usage?: { input_tokens?: number; output_tokens?: number };
+      error?: unknown;
+      model?: string;
+      choices?: { finish_reason?: string; message?: { content?: string; refusal?: string } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
-    if (data.stop_reason !== 'end_turn') throw new AnalysisError('analysisInvalid');
-    const text = data.content
-      ?.filter((b) => b.type === 'text')
-      .map((b) => b.text || '')
-      .join('');
-    if (!text || text.length > 50000) throw new AnalysisError('analysisInvalid');
+    const choice = data.choices?.[0];
+    if (
+      data.error ||
+      data.model !== openRouterModel ||
+      choice?.finish_reason !== 'stop' ||
+      choice.message?.refusal
+    )
+      throw new AnalysisError('analysisInvalid');
+    const text = choice.message?.content;
+    if (typeof text !== 'string' || !text || text.length > 50000)
+      throw new AnalysisError('analysisInvalid');
     return {
       result: schema.parse(JSON.parse(text)) as z.infer<T>,
-      inputTokens: data.usage?.input_tokens || 0,
-      outputTokens: data.usage?.output_tokens || 0,
+      inputTokens: data.usage?.prompt_tokens || 0,
+      outputTokens: data.usage?.completion_tokens || 0,
       latencyMs: Date.now() - started,
     };
   } catch {

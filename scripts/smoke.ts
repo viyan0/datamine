@@ -398,10 +398,10 @@ try {
     ).status,
     403,
   );
-  const originalKey = process.env.ANTHROPIC_API_KEY,
-    originalModel = process.env.ANTHROPIC_MODEL;
-  process.env.ANTHROPIC_API_KEY = 'local-test-only';
-  process.env.ANTHROPIC_MODEL = 'claude-haiku-5-5';
+  const originalKey = process.env.OPENROUTER_API_KEY,
+    originalModel = process.env.OPENROUTER_MODEL;
+  process.env.OPENROUTER_API_KEY = 'local-test-only';
+  process.env.OPENROUTER_MODEL = 'anthropic/claude-haiku-5.5';
   const evidenceId = randomUUID();
   const evidenceText = 'Two travelers need a flight and visa to Istanbul next Friday.';
   await pool.query(
@@ -413,11 +413,11 @@ try {
   let hold: Promise<void> | null = null;
   let entered: (() => void) | null = null;
   globalThis.fetch = async (input, init) => {
-    if (String(input) !== 'https://api.anthropic.com/v1/messages')
+    if (String(input) !== 'https://openrouter.ai/api/v1/chat/completions')
       return originalFetch(input, init);
     aiCalls++;
     const payload = JSON.parse(String(init?.body));
-    const serialized = payload.messages[0].content;
+    const serialized = payload.messages[1].content;
     assert.ok(serialized.includes(evidenceText));
     assert.ok(!serialized.includes(fields.note));
     assert.ok(!serialized.includes(thread.contactPhone));
@@ -425,34 +425,41 @@ try {
     entered?.();
     if (hold) await hold;
     return Response.json({
-      stop_reason: 'end_turn',
-      content: [
+      model: 'anthropic/claude-haiku-5.5',
+      choices: [
         {
-          type: 'text',
-          text: JSON.stringify({
-            language: 'en',
-            services: ['flight', 'visa'],
-            intent: 'availability',
-            inquiryStatus: 'new',
-            subject: null,
-            stopOffers: null,
-            summary: 'Two travelers need a flight and visa to Istanbul.',
-            nextStep: 'Confirm travel dates.',
-            reviewNote: 'The exact date and year need confirmation.',
-            facts: [
-              {
-                label: 'location',
-                value: 'Istanbul',
-                quote: invalid ? 'invented quote' : 'Istanbul',
-                messageId: evidenceId,
-              },
-              { label: 'date', value: 'next Friday', quote: 'next Friday', messageId: evidenceId },
-              { label: 'quantity', value: 'Two', quote: 'Two travelers', messageId: evidenceId },
-            ],
-          }),
+          finish_reason: 'stop',
+          message: {
+            content: JSON.stringify({
+              language: 'en',
+              services: ['flight', 'visa'],
+              intent: 'availability',
+              inquiryStatus: 'new',
+              subject: null,
+              stopOffers: null,
+              summary: 'Two travelers need a flight and visa to Istanbul.',
+              nextStep: 'Confirm travel dates.',
+              reviewNote: 'The exact date and year need confirmation.',
+              facts: [
+                {
+                  label: 'location',
+                  value: 'Istanbul',
+                  quote: invalid ? 'invented quote' : 'Istanbul',
+                  messageId: evidenceId,
+                },
+                {
+                  label: 'date',
+                  value: 'next Friday',
+                  quote: 'next Friday',
+                  messageId: evidenceId,
+                },
+                { label: 'quantity', value: 'Two', quote: 'Two travelers', messageId: evidenceId },
+              ],
+            }),
+          },
         },
       ],
-      usage: { input_tokens: 200, output_tokens: 150 },
+      usage: { prompt_tokens: 200, completion_tokens: 150 },
     });
   };
   try {
@@ -536,17 +543,17 @@ try {
     );
     assert.equal(unchanged.data.conversations[0].note, fields.note);
     assert.equal(unchanged.data.conversations[0].inquiryStatus, fields.inquiryStatus);
-    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
     await assert.rejects(analyzeConversation(a.data.id, thread.id, 'ckb'), {
       code: 'analysisNotConfigured',
     });
     assert.equal(aiCalls, 3);
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
-    else process.env.ANTHROPIC_API_KEY = originalKey;
-    if (originalModel === undefined) delete process.env.ANTHROPIC_MODEL;
-    else process.env.ANTHROPIC_MODEL = originalModel;
+    if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalKey;
+    if (originalModel === undefined) delete process.env.OPENROUTER_MODEL;
+    else process.env.OPENROUTER_MODEL = originalModel;
   }
   // Phase 4: public verification, explicit consent, private business data, and withdrawal.
   assert.equal((await req('/api/customers')).status, 401);
@@ -870,7 +877,7 @@ try {
   });
   assert.equal(foreign.status, 403);
   console.log(
-    'PASS: auth, locales, business isolation/settings, inbox, delivery tracking, AI/cache/evidence, OTP expiry/replay/throttling, explicit consent, shared profile deduplication, opt-out, and private-data boundaries. Meta and Anthropic were mocked; no external messages or AI requests were sent.',
+    'PASS: auth, locales, business isolation/settings, inbox, delivery tracking, AI/cache/evidence, OTP expiry/replay/throttling, explicit consent, shared profile deduplication, opt-out, and private-data boundaries. Meta and OpenRouter were mocked; no external messages or AI requests were sent.',
   );
 } finally {
   await pool.end();

@@ -33,8 +33,8 @@ const people = Array.from({ length: 5 }, () => randomUUID()),
   offerIds: string[] = [],
   userEmail = `phase5-${randomUUID()}@example.com`;
 const originalFetch = globalThis.fetch,
-  originalKey = process.env.ANTHROPIC_API_KEY,
-  originalModel = process.env.ANTHROPIC_MODEL;
+  originalKey = process.env.OPENROUTER_API_KEY,
+  originalModel = process.env.OPENROUTER_MODEL;
 let thread = '',
   category = 'Bespoke shelving',
   subject = 'walnut shelf',
@@ -134,12 +134,12 @@ async function readyOffer(owner: string) {
 }
 globalThis.fetch = async (input, init) => {
   const url = String(input);
-  if (url === 'https://api.anthropic.com/v1/messages') {
+  if (url === 'https://openrouter.ai/api/v1/chat/completions') {
     aiCalls++;
     if (failAi) return Response.json({}, { status: 429 });
     const payload = JSON.parse(String(init?.body)),
-      source = JSON.parse(payload.messages[0].content);
-    assert.equal(payload.model, 'claude-haiku-5-5');
+      source = JSON.parse(payload.messages[1].content);
+    assert.equal(payload.model, 'anthropic/claude-haiku-5.5');
     assert.equal(payload.tools, undefined);
     aiEntered?.();
     if (waitAi) await waitAi;
@@ -188,9 +188,9 @@ globalThis.fetch = async (input, init) => {
       };
     }
     return Response.json({
-      stop_reason: 'end_turn',
-      content: [{ type: 'text', text: JSON.stringify(result) }],
-      usage: { input_tokens: 100, output_tokens: 100 },
+      model: 'anthropic/claude-haiku-5.5',
+      choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(result) } }],
+      usage: { prompt_tokens: 100, completion_tokens: 100 },
     });
   }
   if (url.startsWith('https://graph.facebook.com/') && url.includes('/message_templates')) {
@@ -224,8 +224,8 @@ globalThis.fetch = async (input, init) => {
   throw new Error(`Unexpected network request blocked: ${new URL(url).origin}`);
 };
 try {
-  process.env.ANTHROPIC_API_KEY = 'mock-only';
-  process.env.ANTHROPIC_MODEL = 'claude-haiku-5-5';
+  process.env.OPENROUTER_API_KEY = 'mock-only';
+  process.env.OPENROUTER_MODEL = 'anthropic/claude-haiku-5.5';
   const login = await request('/api/auth/sign-in/email', 'POST', {
     email: process.env.BOOTSTRAP_ADMIN_EMAIL,
     password: process.env.BOOTSTRAP_ADMIN_PASSWORD,
@@ -524,7 +524,7 @@ try {
     'Historical withdrawal cannot override fresh explicit enrollment',
   );
   await db.query('update whatsapp_connections set campaign_sender=false where id=$1', [connection]);
-  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
   await webhook('STOP');
   assert.equal(
     (await row('shared_profiles', people[0])).status,
@@ -546,10 +546,10 @@ try {
   );
 } finally {
   globalThis.fetch = originalFetch;
-  if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
-  else process.env.ANTHROPIC_API_KEY = originalKey;
-  if (originalModel === undefined) delete process.env.ANTHROPIC_MODEL;
-  else process.env.ANTHROPIC_MODEL = originalModel;
+  if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
+  else process.env.OPENROUTER_API_KEY = originalKey;
+  if (originalModel === undefined) delete process.env.OPENROUTER_MODEL;
+  else process.env.OPENROUTER_MODEL = originalModel;
   await db.query('delete from campaign_recipients where campaign_id=any($1::text[])', [offerIds]);
   await db.query('delete from campaigns where id=any($1::text[])', [offerIds]);
   await db.query('delete from profile_events where profile_id=any($1::text[])', [people]);

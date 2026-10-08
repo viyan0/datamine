@@ -5,7 +5,7 @@
 The linked project is **viki-0760/datamine**, with Neon Free PostgreSQL **datamine-db** in Frankfurt. `vercel.ts` selects Next.js, the Frankfurt function region, a queue consumer, and a daily recovery job. Vercel runs Next.js directly; it does not run the local `npm start` companion loop.
 
 1. Connect a Neon PostgreSQL resource to **Production**. Use its pooled `DATABASE_URL` for the app. Keep `.env.local` for local development; pull cloud variables into an ignored file with `vercel env pull .local/production.env --environment=production`.
-2. Configure production `BETTER_AUTH_SECRET`, `CREDENTIAL_ENCRYPTION_KEY` (64 hex characters), `WHATSAPP_VERIFY_TOKEN`, `CRON_SECRET`, `ANTHROPIC_MODEL=claude-haiku-5-5`, `ANTHROPIC_API_KEY`, and `META_GRAPH_VERSION=v26.0`. Secrets must stay server-side. The app derives its production URL from Vercel; a custom canonical domain can use `BETTER_AUTH_URL`.
+2. Configure production `BETTER_AUTH_SECRET`, `CREDENTIAL_ENCRYPTION_KEY` (64 hex characters), `WHATSAPP_VERIFY_TOKEN`, `CRON_SECRET`, `OPENROUTER_MODEL=anthropic/claude-haiku-5.5`, `OPENROUTER_API_KEY`, and `META_GRAPH_VERSION=v26.0`. Secrets must stay server-side. The app derives its production URL from Vercel; a custom canonical domain can use `BETTER_AUTH_URL`.
 3. Before deploying a schema change, run `scripts/migrate.ts` with the intended database's **unpooled** URL. Run `scripts/bootstrap.ts` once with an owner email and a strong temporary password. These commands are deliberately separate from preview builds. Never point the local smoke suites at this database.
 4. Run the checks, commit and push, then `vercel deploy --prod --scope viki-0760`. The current GitHub integration could not be connected, so pushes alone do not deploy. The CLI publishes the checked local source; `.vercelignore` excludes local secrets and test data.
 5. Verify `/api/health`, the three language routes, sign-in, and authenticated business APIs. Keep preview deployment protection enabled. Change the temporary owner password through Settings after delivery.
@@ -27,7 +27,7 @@ https://dashboard.render.com/blueprint/new?repo=https://github.com/viyan0/datami
 The same two resources can be created through Render's API/MCP, using the build/start commands and environment variables in the Blueprint. Do not apply a second Blueprint on top of separately provisioned resources without first checking for duplicates.
 
 1. Ensure this repository is accessible to Render and the account's billing setup is complete if Render requests it.
-2. Set `CREDENTIAL_ENCRYPTION_KEY`, bootstrap email, a strong bootstrap password, and `ANTHROPIC_API_KEY`. The Blueprint generates authentication and webhook verification secrets. The app uses Render's `RENDER_EXTERNAL_URL` for its public URL; do not set `BETTER_AUTH_URL` to localhost on the hosted service.
+2. Set `CREDENTIAL_ENCRYPTION_KEY`, bootstrap email, a strong bootstrap password, and `OPENROUTER_API_KEY`. The Blueprint generates authentication and webhook verification secrets. The app uses Render's `RENDER_EXTERNAL_URL` for its public URL; do not set `BETTER_AUTH_URL` to localhost on the hosted service.
 3. Use the database's **internal** connection string. The Blueprint restricts external database access; it does not affect private networking.
 4. Build with `npm ci --include=dev && npm run build`. Start with `npm start`.
 5. Startup applies versioned Drizzle migrations, bootstraps the first owner if needed, starts the companion automation loop, and binds Next.js to `0.0.0.0:$PORT`. Startup fails on migration errors rather than serving a partially initialized app.
@@ -65,9 +65,9 @@ No real Meta credentials were supplied during implementation. Provider verificat
 
 ## Enable conversation analysis
 
-Add `ANTHROPIC_API_KEY` to the web service environment and retain `ANTHROPIC_MODEL=claude-haiku-5-5`. Do not prefix the key with `NEXT_PUBLIC_` or add it to Git. Redeploy or restart after setting the key. The existing start command launches the automation process alongside the web app; no additional hosted service is needed. The sample preview works without this key.
+Add `OPENROUTER_API_KEY` to the web service environment and retain `OPENROUTER_MODEL=anthropic/claude-haiku-5.5`. Do not prefix the key with `NEXT_PUBLIC_` or add it to Git. Redeploy or restart after setting the key. The existing start command launches the automation process alongside the web app; no additional hosted service is needed. The sample preview works without this key.
 
-Once configured, send a controlled incoming text and wait for automatic analysis. Check categories, dynamic fact labels, extracted quotes, summary language, and missing details. Repeat with different business types in English, Arabic, and Sorani. Confirm results survive reload, new messages update them, and manual corrections and staff notes are preserved. There is no analysis button. This live model check remains pending; automated checks currently mock Anthropic.
+Once configured, send a controlled incoming text and wait for automatic analysis. Check categories, dynamic fact labels, extracted quotes, summary language, and missing details. Repeat with different business types in English, Arabic, and Sorani. Confirm results survive reload, new messages update them, and manual corrections and staff notes are preserved. There is no analysis button. Automated checks mock OpenRouter; see DELIVERY.md for live verification results. OpenRouter credentials with no remaining credits leave analysis pending with setup guidance.
 
 ## Verify campaigns
 

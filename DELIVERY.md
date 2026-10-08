@@ -1,10 +1,14 @@
 # Phase 5 demo delivery
 
-## Vercel and Meta setup in progress
+## Vercel live; Meta setup pending
 
-The owner connected Vercel after Render required billing information. The project **viki-0760/datamine** is linked locally on Hobby. Neon Free PostgreSQL **datamine-db** is provisioned in Frankfurt and connected to Production; migrations and initial owner bootstrap succeeded. Production authentication, encryption, webhook, and recovery secrets are configured. Vercel Queues now wake the existing PostgreSQL jobs automatically, with bounded processing, retry delays, and daily recovery. The local demo environment is preserved. The Vercel app connector has a workspace permission error and the GitHub integration attempt failed, so deployment uses the authenticated CLI from committed source. No live deployment has been verified yet.
+The demo is live at **https://datamine-lilac.vercel.app**; sample inbox: **https://datamine-lilac.vercel.app/en/demo/inbox**. Production deployment `dpl_GFuxGDp1A71uAvBoFx6mi1QpYwXp` serves source commit `6e51726` from GitHub `main`. Its cloud build succeeded and GitHub CI passed (run `37807517121`).
 
-The owner selected the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio for Datamine and authorized replacing its previous project connection. Its WhatsApp callback currently points to the previous Railway project; the `messages` subscription uses Graph API v26.0. The callback has not been changed: Datamine first needs a working public deployment. No new Meta app or portfolio is needed. A controlled WhatsApp test recipient and a server-side Anthropic API key are still required for live verification.
+The project **viki-0760/datamine** is on Vercel Hobby with Neon Free PostgreSQL **datamine-db** in Frankfurt. Migrations and initial owner bootstrap succeeded. Production authentication, encryption, webhook, and recovery secrets are configured. Vercel Queues wake the existing PostgreSQL jobs automatically, with bounded processing, retry delays, and daily recovery. The local demo environment is preserved. The Vercel app connector has a workspace permission error and the GitHub integration attempt failed, so deployment uses the authenticated CLI from committed source. Git pushes alone do not publish a new release.
+
+Live checks passed: public English/Arabic/Sorani sample inboxes; database health; owner sign-in; authenticated inbox/customer/campaign APIs; rejected anonymous access; correct and incorrect webhook verification tokens; authenticated business settings update; and the daily recovery endpoint. That business update invoked the managed queue consumer, which completed with HTTP 200. The consumer is inaccessible over public HTTP. Its logs contain a PostgreSQL driver's SSL-mode deprecation warning, not a processing failure. The public sample furniture inbox was also verified in Chrome. No fake messages or customer records were inserted into the production database.
+
+The owner selected the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio for Datamine and authorized replacing its previous project connection. Its WhatsApp callback currently points to the previous Railway project; the `messages` subscription uses Graph API v26.0. The test number is +1 (555) 632-3113 (phone ID `1328135173721537`, WABA `2248867165684591`). The callback has not been changed because connection credentials are still missing. The browser is at Generate token, awaiting the required confirmation for credential creation. A controlled WhatsApp recipient and server-side Anthropic API key were requested. The selected Haiku 5.5 model exists in the current provider catalog; Vercel AI Gateway has zero credits, so no alternative provider was enabled.
 
 ## Implemented
 
@@ -31,7 +35,7 @@ All Anthropic and outbound Meta calls in integration tests are mocked. Real mode
 
 ## External setup still required — Phase 6
 
-- **Vercel:** finish release checks, deploy, and verify the public app, authentication, database, and queue callback. Database provisioning and server configuration are complete. Render remains an alternative; its earlier free database creation returned HTTP 402 requiring billing setup.
+- **Hosting:** Vercel and Neon are deployed and verified. The optional GitHub-to-Vercel integration remains unconnected; use the CLI to release new commits. Render remains an alternative; its earlier free database creation returned HTTP 402 requiring billing setup.
 - **Anthropic:** configure a server-side API key with access to the selected model, claude-haiku-5-5, then verify automatic analysis with real conversations.
 - **WhatsApp:** connect real Meta assets, webhook subscriptions, the central Datamine sender, and approved templates in the intended languages. Test with controlled recipients.
 - **Pilot review:** native-speaker Arabic/Sorani review and a complete inquiry → opt-in → offer → opt-out test on managed PostgreSQL. Always-on hosting is needed for prompt processing; a sleeping free web service only processes jobs while awake.

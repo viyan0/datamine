@@ -95,6 +95,9 @@ export function ConversationAnalysis({
       {!demo && state.configured && state.status === 'error' && (
         <p className="analysis-notice">{t('retrying')}</p>
       )}
+      {!demo && state.status === 'awaitingConsent' && (
+        <p className="analysis-notice">{t('awaitingConsent')}</p>
+      )}
       {!demo && state.status === 'waitingForText' && (
         <p className="analysis-notice">{errors('analysisNoText')}</p>
       )}

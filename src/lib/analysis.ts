@@ -1,15 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
-import {
-  agencies,
-  connections,
-  conversations,
-  messages,
-  sharedProfiles,
-  profileEvents,
-  campaigns,
-} from '@/db/schema';
+import { agencies, conversations, messages, sharedProfiles, customerConsents } from '@/db/schema';
+import { consentAllowsAnalysis, syncCustomerInterests, clearCustomerData } from './consent';
 import type { BusinessContext } from './business';
 import { getConversation } from './inbox';
 import {
@@ -70,7 +63,7 @@ export async function getAnalysisState(agencyId: string, id: string) {
   return {
     analysis: c.analysis?.version === analysisVersion ? c.analysis : null,
     configured: analysisConfigured(),
-    status: c.analysisStatus,
+    status: (await consentAllowsAnalysis(c.contactPhone)) ? c.analysisStatus : 'awaitingConsent',
     error: c.analysisError,
     stale:
       !!c.analysis &&
@@ -80,16 +73,29 @@ export async function getAnalysisState(agencyId: string, id: string) {
 }
 export async function analyzeConversation(agencyId: string, id: string, locale: string) {
   const c = await getConversation(agencyId, id);
+  if (!(await consentAllowsAnalysis(c.contactPhone)))
+    throw new AnalysisError('analysisConsentRequired', 409);
   const source = await sourceMessages(c);
   if (!source.some((m) => m.direction === 'inbound'))
     throw new AnalysisError('analysisNoText', 422);
   const business = await businessContext(agencyId);
   const sourceHash = fingerprint(source, locale, business);
   if (c.analysis?.sourceHash === sourceHash) {
-    await getDb()
-      .update(conversations)
-      .set({ analysisStatus: 'complete', analysisDueAt: null, analysisError: null })
-      .where(and(eq(conversations.id, id), eq(conversations.analysisRevision, c.analysisRevision)));
+    await getDb().transaction(async (tx) => {
+      const [consent] = await tx
+        .select()
+        .from(customerConsents)
+        .where(eq(customerConsents.phone, c.contactPhone))
+        .for('update');
+      if (consent?.status !== 'accepted') throw new AnalysisError('analysisConsentRequired', 409);
+      await tx
+        .update(conversations)
+        .set({ analysisStatus: 'complete', analysisDueAt: null, analysisError: null })
+        .where(
+          and(eq(conversations.id, id), eq(conversations.analysisRevision, c.analysisRevision)),
+        );
+      await syncCustomerInterests(tx, c.contactPhone);
+    });
     return c.analysis;
   }
   if (!analysisConfigured()) throw new AnalysisError('analysisNotConfigured', 503);
@@ -141,6 +147,12 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
       sourceMessageIds: source.map((m) => m.id),
     };
     await db.transaction(async (tx) => {
+      const [consent] = await tx
+        .select()
+        .from(customerConsents)
+        .where(eq(customerConsents.phone, c.contactPhone))
+        .for('update');
+      if (consent?.status !== 'accepted') throw new AnalysisError('analysisConsentRequired', 409);
       const [current] = await tx
         .select()
         .from(conversations)
@@ -167,48 +179,40 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
             : {}),
         })
         .where(eq(conversations.id, id));
-      const [sender] = await tx
-        .select({
-          enabled: sql<boolean>`${connections.campaignSender} or exists (select 1 from ${campaigns} where ${campaigns.senderId}=${connections.id})`,
-        })
-        .from(connections)
-        .where(eq(connections.id, c.connectionId));
-      if (sender?.enabled) {
-        const [profile] = await tx
-          .select()
-          .from(sharedProfiles)
-          .where(eq(sharedProfiles.phone, c.contactPhone))
-          .for('update');
-        const [stopMessage] = analysis.result.stopOffers
-          ? await tx
-              .select({ createdAt: messages.createdAt })
-              .from(messages)
-              .where(eq(messages.id, analysis.result.stopOffers.messageId))
-          : [];
-        // A fresh explicit enrollment supersedes an earlier withdrawal in the history.
-        const optOut =
-          !!profile &&
-          profile.status === 'active' &&
-          !!stopMessage &&
-          stopMessage.createdAt >= profile.consentAt;
-        if (profile)
-          await tx
-            .update(sharedProfiles)
-            .set({
-              offerHold: false,
-              ...(optOut ? { status: 'optedOut', updatedAt: new Date() } : {}),
-            })
-            .where(eq(sharedProfiles.id, profile.id));
-        if (profile && optOut)
-          await tx.insert(profileEvents).values({
-            id: randomUUID(),
-            profileId: profile.id,
-            action: 'optedOut',
-            noticeVersion: profile.consentVersion,
-            locale,
-            channel: 'whatsapp',
-          });
+      const [profile] = await tx
+        .select()
+        .from(sharedProfiles)
+        .where(eq(sharedProfiles.phone, c.contactPhone))
+        .for('update');
+      const [stopMessage] = analysis.result.stopOffers
+        ? await tx
+            .select({ createdAt: messages.createdAt })
+            .from(messages)
+            .where(eq(messages.id, analysis.result.stopOffers.messageId))
+        : [];
+      // A fresh explicit enrollment supersedes an earlier withdrawal in the history.
+      const optOut =
+        !!profile &&
+        profile.status === 'active' &&
+        !!stopMessage &&
+        stopMessage.createdAt >= profile.consentAt;
+      if (profile && optOut) {
+        await clearCustomerData(tx, c.contactPhone);
+        await tx
+          .update(customerConsents)
+          .set({
+            status: 'declined',
+            decisionAt: new Date(),
+            decisionMessageId: analysis.result.stopOffers!.messageId,
+            replyStatus: 'queued',
+            replyMessageId: randomUUID(),
+            replyConnectionId: c.connectionId,
+            replyStartedAt: null,
+          })
+          .where(eq(customerConsents.phone, c.contactPhone));
+        return;
       }
+      await syncCustomerInterests(tx, c.contactPhone);
     });
     return analysis;
   } finally {
@@ -231,6 +235,13 @@ export async function processPendingAnalysis(limit = 3) {
     })
     .from(conversations)
     .innerJoin(agencies, eq(agencies.id, conversations.agencyId))
+    .innerJoin(
+      customerConsents,
+      and(
+        eq(customerConsents.phone, conversations.contactPhone),
+        eq(customerConsents.status, 'accepted'),
+      ),
+    )
     .where(
       and(
         lt(conversations.analysisDueAt, new Date()),
@@ -249,18 +260,19 @@ export async function processPendingAnalysis(limit = 3) {
       const code = error instanceof AnalysisError ? error.code : 'analysisUnavailable';
       if (code === 'analysisBusy') continue;
       const [current] = await db.select().from(conversations).where(eq(conversations.id, item.id));
+      if (!current) continue;
       const changed = code === 'analysisChanged' || current.analysisRevision !== item.revision;
       await db
         .update(conversations)
         .set({
           analysisStatus: changed
             ? 'pending'
-            : code === 'analysisNoText'
+            : ['analysisNoText', 'analysisConsentRequired'].includes(code)
               ? 'waitingForText'
               : 'error',
           analysisError: changed ? null : code,
           analysisDueAt:
-            code === 'analysisNoText' && !changed
+            ['analysisNoText', 'analysisConsentRequired'].includes(code) && !changed
               ? null
               : new Date(
                   Date.now() +

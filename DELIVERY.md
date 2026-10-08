@@ -1,5 +1,12 @@
 # Phase 5 demo delivery
 
+## Single WhatsApp consent and automatic audiences
+
+The flower offer had no audience because the real chat had AI-detected flower interest but no enrolled profile. One WhatsApp consent now covers collection, AI analysis and enrollment. First contact queues a notice; YES creates an automatic profile and resumes analysis. NO/STOP removes saved chat/profile data and blocks future collection. Unanswered chats stay held without AI or offers. Minimal consent records preserve the choice across businesses. AI-derived interests refresh existing offer audiences; matching still uses Haiku, without a business-specific taxonomy. The inbox replaces the second enrollment action with consent status.
+
+Verified locally: all 13 checks, both HTTP smoke suites and a production build. The new integration test covers first notice deduplication, no pre-consent AI, YES → dynamic flower interest → existing-offer match, no repeated consent across businesses, first-message YES handling, NO suppression, and STOP during an in-flight AI request without recreating deleted data. Provider calls in automated tests are mocked. Live verification follows deployment.
+
+
 ## Vercel live; WhatsApp and OpenRouter Haiku verified
 
 The demo is live at **https://datamine-lilac.vercel.app**; sample inbox: **https://datamine-lilac.vercel.app/en/demo/inbox**. Production deployment `dpl_F2Tdb3PmwhquisNwPjCpyBQjJzUX` serves source commit `ea3ad24` from GitHub `main`. Its cloud build succeeded and GitHub CI passed (run `37813767920`).

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { connections, conversations, messages } from '@/db/schema';
+import { connections, conversations, messages, customerConsents } from '@/db/schema';
 import { HttpError } from './access';
 import { decrypt } from './security';
 import { sendMetaText } from './meta';
@@ -21,6 +21,8 @@ export async function listConversations(agencyId: string): Promise<Conversation[
   const rows = await getDb()
     .select({
       conversation: conversations,
+      consentStatus: customerConsents.status,
+      consentReplyStatus: customerConsents.replyStatus,
       connectionLabel: connections.label,
       displayPhone: connections.displayPhone,
       preview: sql<
@@ -29,6 +31,7 @@ export async function listConversations(agencyId: string): Promise<Conversation[
     })
     .from(conversations)
     .innerJoin(connections, eq(conversations.connectionId, connections.id))
+    .leftJoin(customerConsents, eq(customerConsents.phone, conversations.contactPhone))
     .where(eq(conversations.agencyId, agencyId))
     .orderBy(desc(conversations.lastMessageAt));
   return rows.map(({ conversation: c, ...rest }) => ({

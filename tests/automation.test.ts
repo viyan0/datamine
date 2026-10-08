@@ -17,6 +17,7 @@ test('queue wakeups respect retries and leases, recover sends, and stop when idl
       insert into agencies(id,name,slug) values ('a','Business','business');
       insert into whatsapp_connections(id,agency_id,label,phone_number_id,waba_id,display_phone,access_token_encrypted,app_secret_encrypted)
       values ('c','a','Test','1','2','test','encrypted','encrypted');
+      insert into customer_consents(phone,status,locale,notice_version,last_inbound_at,reply_connection_id,reply_message_id,reply_status) values ('test','accepted','en','test',now(),'c','reply','read');
       insert into conversations(id,agency_id,connection_id,contact_phone,name,last_inbound_at,last_message_at)
       values ('t','a','c','test','Test',now(),now());
     `);

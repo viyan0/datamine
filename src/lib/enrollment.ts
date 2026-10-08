@@ -8,6 +8,7 @@ import {
   enrollmentLinks,
   sharedProfiles,
   profileEvents,
+  customerConsents,
 } from '@/db/schema';
 import { HttpError } from './access';
 import { appUrl, requiredSecret } from './config';
@@ -21,6 +22,7 @@ import {
   type SharedProfile,
 } from './enrollment-types';
 import { sendMetaText } from './meta';
+import { clearCustomerData, refreshOfferAudiences } from './consent';
 
 export const customerCookie = 'datamine-customer';
 const lifetime = 30 * 60 * 1000;
@@ -218,15 +220,63 @@ export async function saveCustomerProfile(
   enroll: boolean,
 ) {
   const profile = await getDb().transaction(async (tx) => {
+    const [thread] = await tx
+      .select()
+      .from(conversations)
+      .where(eq(conversations.contactPhone, phone))
+      .orderBy(desc(conversations.lastInboundAt))
+      .limit(1);
     if (enroll) {
+      if (!thread) throw new HttpError(404, 'notFound');
+      await tx
+        .insert(customerConsents)
+        .values({
+          phone,
+          status: 'accepted',
+          locale,
+          noticeVersion: consentVersion,
+          noticeAt: new Date(),
+          decisionAt: new Date(),
+          lastInboundAt: thread.lastInboundAt,
+          replyConnectionId: thread.connectionId,
+          replyMessageId: randomUUID(),
+          replyStatus: 'portal',
+        })
+        .onConflictDoUpdate({
+          target: customerConsents.phone,
+          set: {
+            status: 'accepted',
+            noticeVersion: consentVersion,
+            noticeAt: new Date(),
+            decisionAt: new Date(),
+            replyStatus: 'portal',
+          },
+        });
+      await tx
+        .update(conversations)
+        .set({
+          analysisStatus: 'pending',
+          analysisDueAt: new Date(),
+          analysisAttempts: 0,
+          analysisError: null,
+        })
+        .where(eq(conversations.contactPhone, phone));
       const [saved] = await tx
         .insert(sharedProfiles)
-        .values({ id: randomUUID(), phone, ...fields, consentVersion, consentAt: new Date() })
+        .values({
+          id: randomUUID(),
+          phone,
+          ...fields,
+          automaticInterests: true,
+          consentVersion,
+          consentAt: new Date(),
+        })
         .onConflictDoUpdate({
           target: sharedProfiles.phone,
           set: {
             ...fields,
             status: 'active',
+            automaticInterests: true,
             offerHold: false,
             consentVersion,
             consentAt: new Date(),
@@ -241,6 +291,7 @@ export async function saveCustomerProfile(
         noticeVersion: consentVersion,
         locale,
       });
+      await refreshOfferAudiences(tx, [locale, fields.language]);
       return saved;
     }
     const [saved] = await tx
@@ -256,25 +307,18 @@ export async function saveCustomerProfile(
       noticeVersion: saved.consentVersion,
       locale,
     });
+    await refreshOfferAudiences(tx, [locale, fields.language]);
     return saved;
   });
   return serialize(profile);
 }
 export async function optOutCustomer(phone: string, locale: string) {
   await getDb().transaction(async (tx) => {
-    const [profile] = await tx
-      .update(sharedProfiles)
-      .set({ status: 'optedOut', updatedAt: new Date() })
-      .where(and(eq(sharedProfiles.phone, phone), eq(sharedProfiles.status, 'active')))
-      .returning();
-    if (profile)
-      await tx.insert(profileEvents).values({
-        id: randomUUID(),
-        profileId: profile.id,
-        action: 'optedOut',
-        noticeVersion: profile.consentVersion,
-        locale,
-      });
+    await tx
+      .update(customerConsents)
+      .set({ status: 'declined', locale, decisionAt: new Date(), replyStatus: 'portal' })
+      .where(eq(customerConsents.phone, phone));
+    await clearCustomerData(tx, phone);
   });
   return customerProfile(phone);
 }

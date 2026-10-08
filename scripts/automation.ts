@@ -1,3 +1,4 @@
+import { processConsentReplies } from '../src/lib/consent';
 import { getPool } from '../src/db';
 import { processPendingAnalysis } from '../src/lib/analysis';
 import { processCampaigns } from '../src/lib/campaigns';
@@ -12,6 +13,7 @@ for (const signal of ['SIGINT', 'SIGTERM'])
 console.log('Automatic conversation analysis and campaign processing ready.');
 while (!stopping) {
   try {
+    await processConsentReplies(2);
     await Promise.all([processPendingAnalysis(2), processCampaigns()]);
   } catch {
     console.error('Automation will retry after a database or provider error.');

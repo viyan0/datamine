@@ -79,7 +79,7 @@ For isolated local smoke tests only, set AUTOMATION_DISABLED=true on the app pro
 
 ## Operational notes
 
-For Phase 4, use a controlled customer conversation to create an opt-in link, request the WhatsApp code, verify the number, and explicitly join. Confirm the platform administrator's customer list updates, then opt out and confirm the status persists. Real code delivery remains unverified until Meta is connected. The sample enrollment flow sends no messages and needs no credentials.
+For the consent flow, use a controlled customer number. Its first message must queue the WhatsApp notice. Reply YES once and confirm automatic profile creation, AI interests and refreshed offer matches. With a separate test contact, reply NO/STOP and confirm removal of messages, conversations and the profile; subsequent messages must not be retained. The optional sample enrollment page sends no messages.
 
 - `/api/health` checks database connectivity and the migrated user table; it is not a claim that WhatsApp or AI is connected.
 - Each Next.js instance and its automation companion have separate pools of up to five PostgreSQL connections each; the optional health worker adds another pool. Adjust only after measuring load and database limits.

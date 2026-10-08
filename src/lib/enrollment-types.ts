@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { categorySchema } from './business';
-export const consentVersion = '2026-10-08-v1';
+export const consentVersion = '2026-10-08-whatsapp-v2';
 export const profileFields = z.object({
   name: z.string().trim().min(1).max(120),
   language: z.enum(['en', 'ar', 'ckb']),

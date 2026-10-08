@@ -355,7 +355,8 @@
     "quantity": "Quantity",
     "automatic": "Automatic",
     "sampleBadge": "Prepared sample",
-    "retrying": "Analysis will retry automatically. Existing details are kept."
+    "retrying": "Analysis will retry automatically. Existing details are kept.",
+    "awaitingConsent": "Waiting for WhatsApp consent before AI analysis."
   },
   "phaseFour": "Phase 04 · Customer opt-in",
   "customers": "Customer network",
@@ -404,8 +405,8 @@
     "interestsHint": "Separate interests with commas. Up to 12, in any language.",
     "topic": "What are you interested in? (optional)",
     "topicPlaceholder": "e.g. Home office furniture",
-    "consent": "I agree to join Datamine and receive relevant offers on WhatsApp.",
-    "consentDetails": "Datamine will store your name, verified phone number, language, and the preferences you enter here. Your business conversations and private notes stay private. Joining is optional, and you can opt out at any time.",
+    "consent": "I agree to Datamine saving and analysing my messages with AI, learning my interests and sending relevant WhatsApp promotions.",
+    "consentDetails": "One consent covers message collection, AI analysis and promotional enrollment. Your AI-derived interests may match offers from Datamine and participating businesses. Raw chats and private team notes are not shared with other businesses. Reply STOP to remove your saved chat and profile and block future collection.",
     "join": "Join Datamine",
     "save": "Save preferences",
     "saved": "Your preferences are saved.",
@@ -416,7 +417,7 @@
     "cancel": "Cancel",
     "optOutNote": "This affects Datamine offers. It does not change your direct conversations with businesses.",
     "returnHint": "This verified session lasts 30 minutes. To return later, request a fresh opt-in link from the business and verify your number again.",
-    "directoryHint": "Only customer-approved profiles appear here. This list is for Datamine administrators; business chats and notes remain private.",
+    "directoryHint": "Only consenting customers appear here. Interests update from AI analysis of their chats; raw chats and private notes stay private.",
     "filter": "Filter by enrollment status",
     "all": "All",
     "active": "Joined",
@@ -428,7 +429,12 @@
     "consentDate": "Last opt-in",
     "noProfiles": "No matching customers",
     "noProfilesHint": "Customers appear after verifying their number and choosing to join.",
-    "demoDirectory": "Explore sample profiles or try the opt-in flow. Demo preferences stay in this browser tab only."
+    "demoDirectory": "Explore sample profiles or try the opt-in flow. Demo preferences stay in this browser tab only.",
+    "singleConsent": "WhatsApp consent",
+    "consentAccepted": "Accepted once. AI updates interests and matches offers automatically; no extra enrollment is needed.",
+    "consentPending": "Waiting for the customer to reply YES to the WhatsApp notice. NO removes the held chat and blocks collection.",
+    "consentDeclined": "Consent withdrawn. Saved chats and interests are removed.",
+    "consentFailed": "The consent notice could not be confirmed. Analysis and offers stay paused."
   },
   "phaseFive": "Phase 05 · Automatic insights & offers",
   "campaignsTitle": "The right offer. The right people.",

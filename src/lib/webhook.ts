@@ -8,11 +8,11 @@ import {
   messages,
   conversations,
   sharedProfiles,
-  profileEvents,
-  campaigns,
+  customerConsents,
 } from '@/db/schema';
 import { decrypt, verifySignature } from './security';
 import { HttpError } from './access';
+import { handleCustomerConsent } from './consent';
 
 const eventSchema = z.object({
   object: z.literal('whatsapp_business_account'),
@@ -105,18 +105,23 @@ export async function ingestWebhook(raw: string, signature: string | null) {
           (c) => c.phoneNumberId === change.value.metadata.phone_number_id && c.wabaId === entry.id,
         );
         if (!connection || change.field !== 'messages') continue;
-        const datamineSender =
-          connection.campaignSender ||
-          (
-            await tx
-              .select({ id: campaigns.id })
-              .from(campaigns)
-              .where(eq(campaigns.senderId, connection.id))
-              .limit(1)
-          ).length > 0;
         for (const message of change.value.messages ?? []) {
           const timestamp = new Date(Number(message.timestamp) * 1000);
           if (!Number.isFinite(timestamp.getTime())) throw new HttpError(400, 'invalidWebhook');
+          const contactName =
+            change.value.contacts
+              ?.find((c) => c.wa_id === message.from)
+              ?.profile?.name?.slice(0, 120) || message.from;
+          const consent = await handleCustomerConsent(tx, {
+            phone: message.from,
+            connectionId: connection.id,
+            agencyId: connection.agencyId,
+            messageId: message.id,
+            text: message.text?.body || '',
+            name: contactName,
+            timestamp,
+          });
+          if (!consent.store) continue;
           const inserted = await tx
             .insert(providerEvents)
             .values({
@@ -130,10 +135,6 @@ export async function ingestWebhook(raw: string, signature: string | null) {
             .onConflictDoNothing()
             .returning({ id: providerEvents.id });
           if (inserted.length) {
-            const contactName =
-              change.value.contacts
-                ?.find((c) => c.wa_id === message.from)
-                ?.profile?.name?.slice(0, 120) || message.from;
             await tx
               .insert(conversations)
               .values({
@@ -144,15 +145,16 @@ export async function ingestWebhook(raw: string, signature: string | null) {
                 name: contactName,
                 lastInboundAt: timestamp,
                 lastMessageAt: timestamp,
-                analysisDueAt: new Date(Date.now() + 2000),
+                analysisStatus: consent.accepted ? 'pending' : 'awaitingConsent',
+                analysisDueAt: consent.accepted ? new Date(Date.now() + 2000) : null,
               })
               .onConflictDoUpdate({
                 target: [conversations.connectionId, conversations.contactPhone],
                 set: {
                   lastInboundAt: sql`greatest(${conversations.lastInboundAt}, excluded.last_inbound_at)`,
                   lastMessageAt: sql`greatest(${conversations.lastMessageAt}, excluded.last_message_at)`,
-                  analysisDueAt: new Date(Date.now() + 2000),
-                  analysisStatus: 'pending',
+                  analysisDueAt: consent.accepted ? new Date(Date.now() + 2000) : null,
+                  analysisStatus: consent.accepted ? 'pending' : 'awaitingConsent',
                   analysisError: null,
                   analysisAttempts: 0,
                   analysisRevision: sql`${conversations.analysisRevision} + 1`,
@@ -173,32 +175,40 @@ export async function ingestWebhook(raw: string, signature: string | null) {
               })
               .onConflictDoNothing();
             stored++;
-            if (datamineSender) {
-              const stop =
-                /^(stop|unsubscribe|stop offers|إلغاء الاشتراك|توقف|وەستان|وازهێنان)[.!؟\s]*$/iu.test(
-                  message.text?.body?.trim() || '',
-                );
-              const [profile] = await tx
+            if (consent.accepted)
+              await tx
                 .update(sharedProfiles)
-                .set({
-                  offerHold: !stop,
-                  ...(stop ? { status: 'optedOut', updatedAt: new Date() } : {}),
-                })
-                .where(eq(sharedProfiles.phone, message.from))
-                .returning();
-              if (profile && stop)
-                await tx.insert(profileEvents).values({
-                  id: randomUUID(),
-                  profileId: profile.id,
-                  action: 'optedOut',
-                  noticeVersion: profile.consentVersion,
-                  locale: profile.language,
-                  channel: 'whatsapp',
-                });
-            }
+                .set({ offerHold: true })
+                .where(eq(sharedProfiles.phone, message.from));
           }
         }
         for (const status of change.value.statuses ?? []) {
+          if (status.biz_opaque_callback_data) {
+            const ranks: Record<string, number> = { sent: 2, failed: 3, delivered: 4, read: 5 };
+            const rank = ranks[status.status];
+            if (rank) {
+              const receipt = await tx
+                .update(customerConsents)
+                .set({
+                  replyStatus: sql`case when (case ${customerConsents.replyStatus} when 'read' then 5 when 'delivered' then 4 when 'failed' then 3 when 'sent' then 2 else 0 end) < ${rank} then ${status.status} else ${customerConsents.replyStatus} end`,
+                })
+                .where(
+                  and(
+                    eq(customerConsents.replyConnectionId, connection.id),
+                    eq(customerConsents.replyMessageId, status.biz_opaque_callback_data),
+                  ),
+                )
+                .returning({ phone: customerConsents.phone });
+              if (receipt.length) continue;
+            }
+          }
+          if (typeof status.recipient_id === 'string') {
+            const [consent] = await tx
+              .select()
+              .from(customerConsents)
+              .where(eq(customerConsents.phone, status.recipient_id));
+            if (consent?.status === 'declined') continue;
+          }
           const inserted = await tx
             .insert(providerEvents)
             .values({

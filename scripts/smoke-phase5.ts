@@ -302,6 +302,10 @@ try {
     (await request('/api/campaigns/setup', 'POST', { id: connection }, viewer)).status,
     403,
   );
+  await db.query(
+    "insert into customer_consents(phone,status,locale,notice_version,notice_at,last_inbound_at,reply_connection_id,reply_message_id,reply_status) values ($1,'accepted','en','test',now()-interval '1 minute',now(),$2,$3,'read')",
+    [phone, connection, randomUUID()],
+  );
   assert.equal(await webhook('I need a walnut shelf.', 'dedupe-phase5-' + connection), 1);
   thread = (await db.query('select id from conversations where connection_id=$1', [connection]))
     .rows[0].id;
@@ -509,40 +513,43 @@ try {
   assert.equal((await row('shared_profiles', people[0])).offer_hold, true);
   stopOffers = true;
   await runAnalysis();
-  assert.equal((await row('shared_profiles', people[0])).status, 'optedOut');
+  assert.equal(
+    await row('shared_profiles', people[0]),
+    undefined,
+    'AI withdrawal removes the profile',
+  );
+  assert.equal(await row('conversations', thread), undefined, 'AI withdrawal removes chats');
   stopOffers = false;
   await webhook('Thanks for your help with the oak desk.');
-  await runAnalysis();
   assert.equal(
-    (await row('shared_profiles', people[0])).status,
-    'optedOut',
+    (await db.query('select status from customer_consents where phone=$1', [phone])).rows[0].status,
+    'declined',
     'Analysis cannot grant consent',
   );
-  await db.query("update shared_profiles set status='active',consent_at=now() where id=$1", [
-    people[0],
-  ]);
-  stopOffers = true;
-  await webhook('Checking my oak desk again.');
-  await runAnalysis();
+  // A fresh explicit YES can rejoin; the deleted history cannot override it.
+  await db.query(
+    "update customer_consents set decision_at=now()-interval '1 minute' where phone=$1",
+    [phone],
+  );
+  await webhook('YES');
   assert.equal(
-    (await row('shared_profiles', people[0])).status,
+    (await db.query('select status from shared_profiles where phone=$1', [phone])).rows[0].status,
     'active',
-    'Historical withdrawal cannot override fresh explicit enrollment',
   );
   await db.query('update whatsapp_connections set campaign_sender=false where id=$1', [connection]);
   delete process.env.OPENROUTER_API_KEY;
   await webhook('STOP');
   assert.equal(
-    (await row('shared_profiles', people[0])).status,
-    'optedOut',
-    'STOP works without AI, including a previous Datamine sender',
+    (await db.query('select id from shared_profiles where phone=$1', [phone])).rowCount,
+    0,
+    'STOP works without AI on any connected inbox',
   );
   const stale = await newOffer(owner);
   await db.query("update campaigns set status='sending' where id=$1", [stale]);
   const rid = randomUUID();
   await db.query(
     "insert into campaign_recipients(id,campaign_id,profile_id,profile_updated_at,reason,status,submitted_at) values($1,$2,$3,now(),'test','submitting',now()-interval '2 minutes')",
-    [rid, stale, people[0]],
+    [rid, stale, people[1]],
   );
   await processCampaigns();
   assert.equal((await row('campaign_recipients', rid)).status, 'uncertain');
@@ -563,6 +570,7 @@ try {
   await db.query('delete from messages where connection_id=$1', [connection]);
   await db.query('delete from provider_events where connection_id=$1', [connection]);
   await db.query('delete from conversations where connection_id=$1', [connection]);
+  await db.query('delete from customer_consents where reply_connection_id=$1', [connection]);
   await db.query('delete from whatsapp_connections where id=$1', [connection]);
   await db.query('delete from invitations where agency_id=$1', [business]);
   await db.query('delete from audit_events where agency_id=$1', [business]);

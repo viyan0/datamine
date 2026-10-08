@@ -7,6 +7,8 @@ export type CustomerFields = {
   note: string;
 };
 export type Conversation = CustomerFields & {
+  consentStatus?: string | null;
+  consentReplyStatus?: string | null;
   manualFields?: string[];
   categories?: string[];
   id: string;

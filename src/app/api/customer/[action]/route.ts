@@ -1,3 +1,4 @@
+import { wakeAutomation } from '@/lib/automation';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
@@ -59,17 +60,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
         .object({ consent: z.literal(true), locale: localeSchema })
         .parse(input);
       void consent;
-      return response({ phone, profile: await saveCustomerProfile(phone, fields, locale, true) });
+      const profile = await saveCustomerProfile(phone, fields, locale, true);
+      await wakeAutomation();
+      return response({ phone, profile });
     }
     if (action === 'preferences') {
       const fields = profileFields.parse(input),
         { locale } = z.object({ locale: localeSchema }).parse(input);
-      return response({ phone, profile: await saveCustomerProfile(phone, fields, locale, false) });
+      const profile = await saveCustomerProfile(phone, fields, locale, false);
+      await wakeAutomation();
+      return response({ phone, profile });
     }
-    if (action === 'opt-out')
-      return response(
-        await optOutCustomer(phone, z.object({ locale: localeSchema }).parse(input).locale),
+    if (action === 'opt-out') {
+      const result = await optOutCustomer(
+        phone,
+        z.object({ locale: localeSchema }).parse(input).locale,
       );
+      await wakeAutomation();
+      return response(result);
+    }
     throw new HttpError(404, 'notFound');
   } catch (error) {
     return apiError(error);

@@ -402,6 +402,10 @@ try {
     originalModel = process.env.OPENROUTER_MODEL;
   process.env.OPENROUTER_API_KEY = 'local-test-only';
   process.env.OPENROUTER_MODEL = 'anthropic/claude-haiku-5.5';
+  await pool.query(
+    "update customer_consents set status='accepted',reply_status='read' where phone=$1",
+    [thread.contactPhone],
+  );
   const evidenceId = randomUUID();
   const evidenceText = 'Two travelers need a flight and visa to Istanbul next Friday.';
   await pool.query(
@@ -722,41 +726,13 @@ try {
         'updatedAt',
       ].sort(),
     );
-    assert.equal(
-      (await req('/api/customer/opt-out', 'POST', { locale: 'en' }, verified.cookie)).data.profile
-        .status,
-      'optedOut',
-    );
-    await req('/api/customer/opt-out', 'POST', { locale: 'en' }, verified.cookie);
-    const edited = await req(
-      '/api/customer/preferences',
-      'POST',
-      { ...profile, name: 'Updated by customer' },
-      verified.cookie,
-    );
-    assert.equal(
-      edited.data.profile.status,
-      'optedOut',
-      'Preference edits never silently re-enroll',
-    );
     const rejoined = await req(
       '/api/customer/profile',
       'POST',
       { ...profile, consent: true },
       verified.cookie,
     );
-    assert.equal(
-      rejoined.data.profile.id,
-      joined.data.profile.id,
-      'Same phone has one shared profile',
-    );
-    assert.equal(rejoined.data.profile.status, 'active');
-    const events = await pool.query(
-      'SELECT action,notice_version FROM profile_events WHERE profile_id=$1',
-      [entry.id],
-    );
-    assert.equal(events.rows.filter((e) => e.action === 'optedOut').length, 1);
-    assert.ok(events.rows.every((e) => e.notice_version === '2026-10-08-v1'));
+    assert.equal(rejoined.data.profile.id, joined.data.profile.id, 'Same phone has one profile');
     await pool.query(
       "UPDATE enrollment_links SET session_expires_at=now()-interval '1 minute' WHERE token_hash=$1",
       [digest(enrollmentToken)],
@@ -853,6 +829,21 @@ try {
     );
     assert.equal((await req('/api/customer/access', 'POST', { token: lockedToken })).status, 410);
     await assert.rejects(sendEnrollmentCode(lockedToken, 'en'), { code: 'enrollmentExpired' });
+    assert.equal(
+      (await req('/api/customer/opt-out', 'POST', { locale: 'en' }, sharedAccess.cookie)).data
+        .profile,
+      null,
+    );
+    assert.equal(
+      (await req('/api/customer/preferences', 'POST', profile, sharedAccess.cookie)).status,
+      401,
+      'Withdrawal deletes the profile and invalidates old enrollment sessions',
+    );
+    assert.equal(
+      (await pool.query('select status from customer_consents where phone=$1', [phone])).rows[0]
+        .status,
+      'declined',
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

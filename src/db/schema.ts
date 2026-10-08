@@ -253,9 +253,28 @@ export const sharedProfiles = pgTable('shared_profiles', {
   interests: jsonb('interests').$type<string[]>().notNull().default([]),
   status: text('status').default('active').notNull(),
   offerHold: boolean('offer_hold').default(false).notNull(),
+  automaticInterests: boolean('automatic_interests').default(false).notNull(),
   consentVersion: text('consent_version').notNull(),
   consentAt: timestamp('consent_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+// One choice covers Datamine collection, AI-derived interests and promotional enrollment.
+export const customerConsents = pgTable('customer_consents', {
+  phone: text('phone').primaryKey(),
+  status: text('status').default('pending').notNull(),
+  locale: text('locale').notNull(),
+  noticeVersion: text('notice_version').notNull(),
+  noticeAt: timestamp('notice_at', { withTimezone: true }),
+  decisionAt: timestamp('decision_at', { withTimezone: true }),
+  decisionMessageId: text('decision_message_id'),
+  lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }).notNull(),
+  replyConnectionId: text('reply_connection_id')
+    .notNull()
+    .references(() => connections.id),
+  replyMessageId: text('reply_message_id').notNull().unique(),
+  replyStatus: text('reply_status').default('queued').notNull(),
+  replyStartedAt: timestamp('reply_started_at', { withTimezone: true }),
+  createdAt: createdAt(),
 });
 export const profileEvents = pgTable('profile_events', {
   id: text('id').primaryKey(),

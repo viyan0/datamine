@@ -21,17 +21,11 @@ Offers now have automatic audience matching and simple approved-template deliver
 
 ## Customer opt-in
 
-From an inbox's customer details, staff create a private opt-in link and share it manually. The customer opens `/en/enroll#<token>`, requests a six-digit WhatsApp code, and verifies the number already associated with the conversation. Codes use the business's existing Meta connection and require a customer message within the 24-hour reply window. They are excluded from staff message history and API responses.
+The first incoming WhatsApp message queues one consent notice. A single explicit YES (also Arabic/Sorani equivalents) covers message collection, AI analysis and promotional enrollment. Silence stays pending: messages are held without AI analysis or promotional matching. NO deletes the held chat; STOP withdraws later. A minimal phone/choice record prevents further collection after withdrawal. Replayed webhooks cannot send duplicate notices or silently reverse a choice.
 
-Verification alone does **not** enroll anyone. The customer enters their own name, language, interests, and optional product/service/topic, then checks an initially unchecked consent box to join Datamine and receive relevant WhatsApp offers. Consent is recorded with its notice version, locale, channel, and timestamp. No private conversation, staff note, or AI-inferred preference is copied into this profile.
+After YES, Haiku analyses the held messages, creates the shared customer profile and updates its interests automatically from its dynamic categories and subject. Existing unsent offers refresh their audience when those interests change. Consent applies once across connected businesses; no separate enrollment form is required. Raw conversations and staff notes remain private to the business. Offer matching uses consented interests and language, excluding names, phone numbers and raw chats from the AI request.
 
-The central list at `/en/app/customers` is restricted to Datamine platform administrators. A phone number has one shared profile across businesses. Verified customers can update their own preferences, opt out, or explicitly join again. Preference changes never undo an opt-out. Opted-out records remain as suppression records; campaign sending checks this suppression again immediately before submission.
-
-Links expire after 24 hours; a conversation can create one per hour. Codes expire after 10 minutes, permit five incorrect attempts and three sends per link, and have a one-minute resend cooldown. Codes and link/session tokens are hashed; successful verification consumes the code and creates a 30-minute HttpOnly customer session. After it expires, the customer requests a fresh link and verifies again. No new SMS provider or worker is needed.
-
-Try the simulated flow at `/en/enroll/demo` (also `/ar` and `/ckb`) with code **123456**, then visit `/en/demo/customers`. Sample preferences stay in that browser tab's session storage; they never reach the database or Meta. Sample businesses include travel, home furnishings, and a salon.
-
-Existing database/API names such as `agencies`, `service`, and `destination` are retained for compatibility. Their user-facing meanings are business, category, and product/service/topic; there is no travel-only validation.
+Inbox details show consent status. The existing verified customer portal remains an optional preferences route. Its opt-out removes the profile, chats and old access links. Neither the AI nor staff can infer an opt-in. Declines and natural-language promotional withdrawals remove saved data and prevent future collection; ambiguous sends are not blindly retried.
 
 ## Automatic AI analysis
 
@@ -45,13 +39,13 @@ Set OPENROUTER_API_KEY to enable live analysis. Without it, the interface shows 
 
 ## Offers and campaigns
 
-Open **Campaigns** to submit an offer for any business. Haiku automatically classifies the offer and matches customers using only self-declared interests and product/service/topic. Names, phone numbers, private conversations, and staff notes are excluded from matching requests. Only active, unheld profiles with the offer's language are eligible; this demo supports up to 100 per language. Datamine administrators see the audience and match reasons; ordinary business staff see only their own offers and status.
+Open **Campaigns** to submit an offer for any business. Haiku automatically classifies the offer and matches customers using consented AI-derived interests and product/service/topic. Names, phone numbers, private conversations, and staff notes are excluded from matching requests. Only active, unheld profiles with the offer's language are eligible; this demo supports up to 100 per language. Datamine administrators see the audience and match reasons; ordinary business staff see only their own offers and status.
 
 The platform administrator chooses a central Datamine WhatsApp sender and an approved marketing template. The demo lists static body/footer templates, without variables, buttons, or media, from the first 100 returned by Meta. The template must use the offer's language (or its regional variant). Selecting it automatically rematches the exact text customers will receive. An explicit **Send approved offer** action starts delivery; classification never sends messages on its own.
 
 Each recipient has a durable claim and tracked message. The sender's current template approval, enrollment, opt-out/hold state, language, and profile revision are checked again. Changed preferences require fresh matching; cancellation stops queued recipients. Uncertain sends are not automatically retried. Provider callbacks supply delivery status without regressing read/delivered receipts.
 
-Incoming messages to the Datamine sender put offers on hold until automatic analysis checks them for opt-out. Explicit STOP/unsubscribe commands suppress immediately, including when AI is unavailable. Haiku can suppress promotional messages but cannot grant consent or undo an opt-out. Customers can also opt out through their verified preferences page.
+Incoming messages from enrolled customers put offers on hold until automatic analysis checks them for opt-out. Explicit STOP/unsubscribe commands suppress immediately, including when AI is unavailable. Haiku can suppress promotional messages but cannot grant consent or undo an opt-out. Customers can also opt out through their verified preferences page.
 
 The public Campaigns demo contains a prepared furniture offer and simulated delivery. New sample drafts are temporary and explicitly require a real AI connection for new matching.
 

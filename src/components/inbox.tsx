@@ -488,7 +488,9 @@ function ConversationView({
           url={url}
           onUpdate={onUpdate}
         />
-        {editable && <EnrollmentLink url={url} demo={demo} />}
+        {editable && (
+          <EnrollmentLink demo={demo} status={c.consentStatus} replyStatus={c.consentReplyStatus} />
+        )}
       </aside>
     </>
   );

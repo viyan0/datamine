@@ -4,7 +4,10 @@ export const automationDueSql = `
   select min(due_at) as due_at from (
     select greatest(analysis_due_at, case when analysis_run_id is not null
       then analysis_started_at + interval '91 seconds' else analysis_due_at end) as due_at
-    from conversations where $1 and analysis_due_at is not null
+    from conversations where $1 and analysis_due_at is not null and exists (select 1 from customer_consents cc where cc.phone=conversations.contact_phone and cc.status='accepted')
+    union all
+    select case when reply_status='queued' then now() else reply_started_at + interval '91 seconds' end
+    from customer_consents where reply_status in ('queued','submitting')
     union all
     select greatest(due_at, case when run_id is not null
       then started_at + interval '91 seconds' else due_at end)

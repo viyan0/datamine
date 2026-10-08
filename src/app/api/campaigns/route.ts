@@ -7,6 +7,7 @@ import { requireAgency, requireSession, HttpError } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { listCampaigns } from '@/lib/campaigns';
 import { analysisConfigured } from '@/lib/anthropic';
+import { wakeAutomation } from '@/lib/automation';
 export async function GET() {
   try {
     const session = await requireSession();
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
     await getDb()
       .insert(campaigns)
       .values({ id, ...input, createdBy: session.user.id });
+    await wakeAutomation();
     return Response.json({ id }, { status: 201 });
   } catch (error) {
     return apiError(error);

@@ -4,6 +4,7 @@ import { agencies, conversations } from '@/db/schema';
 import { requireAgency } from '@/lib/access';
 import { businessSettingsSchema } from '@/lib/business';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
+import { wakeAutomation } from '@/lib/automation';
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     checkOrigin(request);
@@ -23,6 +24,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         })
         .where(eq(conversations.agencyId, id));
     });
+    await wakeAutomation();
     return Response.json({ ok: true });
   } catch (error) {
     return apiError(error);

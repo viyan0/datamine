@@ -3,6 +3,7 @@ import { secureEqual } from '@/lib/security';
 import { requiredSecret } from '@/lib/config';
 import { HttpError } from '@/lib/access';
 import { ZodError } from 'zod';
+import { wakeAutomation } from '@/lib/automation';
 export async function GET(request: Request) {
   const url = new URL(request.url);
   if (
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
   if (Buffer.byteLength(raw) > 1_000_000) return new Response('Payload too large', { status: 413 });
   try {
     await ingestWebhook(raw, request.headers.get('x-hub-signature-256'));
+    await wakeAutomation(true);
     return Response.json({ received: true });
   } catch (error) {
     if (error instanceof HttpError)

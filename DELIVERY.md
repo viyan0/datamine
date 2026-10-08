@@ -2,7 +2,7 @@
 
 ## Vercel and Meta setup in progress
 
-The owner connected Vercel after Render required billing information. The Vercel project **viki-0760/datamine** now exists on the Hobby plan and is linked locally. The CLI can access the workspace; the app connector currently returns a workspace permission error. Neon Free PostgreSQL in Frankfurt was selected, but provisioning is waiting for the owner to accept the marketplace terms. No database or deployment has been created on Vercel yet. The GitHub repository connection attempt also failed; a deployment from the local committed source remains an option. Vercel authentication files and pulled environment files are excluded from Git. The existing local demo environment is preserved.
+The owner connected Vercel after Render required billing information. The project **viki-0760/datamine** is linked locally on Hobby. Neon Free PostgreSQL **datamine-db** is provisioned in Frankfurt and connected to Production; migrations and initial owner bootstrap succeeded. Production authentication, encryption, webhook, and recovery secrets are configured. Vercel Queues now wake the existing PostgreSQL jobs automatically, with bounded processing, retry delays, and daily recovery. The local demo environment is preserved. The Vercel app connector has a workspace permission error and the GitHub integration attempt failed, so deployment uses the authenticated CLI from committed source. No live deployment has been verified yet.
 
 The owner selected the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio for Datamine and authorized replacing its previous project connection. Its WhatsApp callback currently points to the previous Railway project; the `messages` subscription uses Graph API v26.0. The callback has not been changed: Datamine first needs a working public deployment. No new Meta app or portfolio is needed. A controlled WhatsApp test recipient and a server-side Anthropic API key are still required for live verification.
 
@@ -18,11 +18,11 @@ The owner selected the existing **leadstest** Meta app (`1088621117427847`) in t
 - Enrollment, language, profile revision, and opt-out checks before delivery. Incoming Datamine messages hold offers while AI checks withdrawal; explicit STOP works without AI. A historical withdrawal cannot overwrite fresh explicit enrollment.
 - English, Arabic, and Sorani campaign interfaces and a prepared public campaign demo with simulated sends.
 
-No new package, Redis instance, or extra hosted worker is required. The automation process starts alongside the app. The optional older pg-boss worker remains for connection health only. The Render Blueprint requests the server-side Anthropic key during setup.
+Vercel uses managed queue wakeups and its existing function runtime; no Redis instance or separate worker server is required. Local/Render startup still launches the companion automation process. The optional older pg-boss worker remains for connection health only.
 
 ## Verification
 
-- Production build, TypeScript, ESLint, and 10 unit/database/translation checks.
+- Production build, TypeScript, ESLint, and 11 unit/database/translation/scheduling checks pass after the Vercel adaptation.
 - Existing HTTP smoke suite: authentication, business isolation, signed webhooks, delivery tracking, AI evidence/cache/concurrency, customer verification, consent, profile deduplication, and privacy.
 - Phase 5 smoke suite: automatic scheduling/classification, arbitrary labels, manual overrides, stale-source rejection, backoff/restart recovery, campaign role/privacy boundaries, template filtering and exact-message matching, preference/consent changes, duplicate sends, late callbacks, uncertain outcomes, cancellation, natural-language opt-out, and offline STOP.
 - Browser: insights appear automatically; furniture inbox, salon offer submission, simulated campaign delivery, and Arabic/Sorani mobile campaign layouts verified. Samples are clearly labeled.
@@ -31,7 +31,7 @@ All Anthropic and outbound Meta calls in integration tests are mocked. Real mode
 
 ## External setup still required — Phase 6
 
-- **Vercel:** accept Neon marketplace terms, provision PostgreSQL, configure server secrets and migrations, and adapt automatic processing to Vercel's managed background execution before deploying. The current startup companion loop does not run unchanged as a Vercel Function. No public live URL has been provisioned or verified. Render remains an alternative; its earlier free database creation returned HTTP 402 requiring billing setup.
+- **Vercel:** finish release checks, deploy, and verify the public app, authentication, database, and queue callback. Database provisioning and server configuration are complete. Render remains an alternative; its earlier free database creation returned HTTP 402 requiring billing setup.
 - **Anthropic:** configure a server-side API key with access to the selected model, claude-haiku-5-5, then verify automatic analysis with real conversations.
 - **WhatsApp:** connect real Meta assets, webhook subscriptions, the central Datamine sender, and approved templates in the intended languages. Test with controlled recipients.
 - **Pilot review:** native-speaker Arabic/Sorani review and a complete inquiry → opt-in → offer → opt-out test on managed PostgreSQL. Always-on hosting is needed for prompt processing; a sleeping free web service only processes jobs while awake.

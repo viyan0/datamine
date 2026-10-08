@@ -1,6 +1,13 @@
 export function appUrl() {
+  const vercelHost =
+    process.env.VERCEL_ENV === 'production'
+      ? process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL
+      : process.env.VERCEL_URL;
   return (
-    process.env.BETTER_AUTH_URL || (process.env.RENDER_EXTERNAL_URL ?? 'http://localhost:3000')
+    process.env.BETTER_AUTH_URL ||
+    (vercelHost
+      ? `https://${vercelHost}`
+      : process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000')
   );
 }
 export function requiredSecret(name: string) {

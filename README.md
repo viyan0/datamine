@@ -15,7 +15,7 @@ A multilingual business demo built with Next.js, TypeScript, PostgreSQL, Drizzle
 - One customer/inquiry record per phone number per connected inbox: name, category, product/service/topic, New / In progress / Closed, and a private note. Incoming messages create records automatically, including backfilled Phase 1 messages.
 - Text replies from the correct business number, with accepted/sent/delivered/read/failed/uncertain states. Viewers cannot reply or edit records.
 - An **interactive sample inbox** at `/en/demo/inbox`, `/ar/demo/inbox`, and `/ckb/demo/inbox`. Replies are simulated and edits reset on leaving the inbox; sample records never reach Meta or the database.
-- An optional pg-boss worker for connection health. Automatic analysis and campaign processing run alongside the app.
+- Automatic analysis and campaign processing use Vercel Queues when deployed on Vercel, or a companion process locally/on Render. An optional pg-boss worker handles connection health.
 
 Offers now have automatic audience matching and simple approved-template delivery. Assignments, reminders, multiple inquiries per customer, media previews, and automatic replies remain outside this demo.
 
@@ -35,7 +35,7 @@ Existing database/API names such as `agencies`, `service`, and `destination` are
 
 ## Automatic AI analysis
 
-New messages schedule analysis automatically; staff do not click an Analyze button. A companion process starts with the app, reads persistent PostgreSQL jobs, and calls **claude-haiku-5-5** through Anthropic's Messages API with low effort, disabled thinking, and [structured JSON output](https://platform.claude.com/docs/en/build-with-claude/structured-outputs). No fallback model, tools, Redis, or extra hosted service is required.
+New messages schedule analysis automatically; staff do not click an Analyze button. PostgreSQL stores pending jobs. On Vercel, a managed queue wakes a bounded processor and schedules retries only while work remains; a daily recovery job catches missed wakeups. Locally and on Render, a companion process starts with the app. Both call **claude-haiku-5-5** through Anthropic's Messages API with low effort, disabled thinking, and [structured JSON output](https://platform.claude.com/docs/en/build-with-claude/structured-outputs). No fallback model or Redis server is required.
 
 Haiku chooses category and intent labels itself, along with the useful facts for that business and conversation. Business category hints are optional and do not constrain the output. The category, product/service/topic, and inquiry status update automatically. Extracted facts must identify an inbound source message and an exact supporting quote; the value must occur in that quote. Unknown facts are omitted. Names and private notes are never overwritten. Manual category/topic/status corrections are retained until staff restore automatic details.
 
@@ -63,8 +63,8 @@ Use Node.js 24 and npm. Install dependencies with `npm ci`. Copy `.env.example` 
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | PostgreSQL connection string; use Render's internal URL on Render |
-| `BETTER_AUTH_URL` | Canonical app URL; Render's `RENDER_EXTERNAL_URL` is the fallback |
+| `DATABASE_URL` | PostgreSQL connection string; Neon pooled URL on Vercel, internal URL on Render |
+| `BETTER_AUTH_URL` | Canonical app URL; defaults to the hosting provider's URL |
 | `BETTER_AUTH_SECRET` | Random secret, at least 32 characters |
 | `CREDENTIAL_ENCRYPTION_KEY` | 32 random bytes encoded as 64 hexadecimal characters |
 | `WHATSAPP_VERIFY_TOKEN` | Random verification secret, at least 32 characters |
@@ -74,6 +74,7 @@ Use Node.js 24 and npm. Install dependencies with `npm ci`. Copy `.env.example` 
 | `META_GRAPH_VERSION` | Supported Meta Graph version, default `v23.0` |
 | `ANTHROPIC_MODEL` | `claude-haiku-5-5`; other model values disable analysis |
 | `ANTHROPIC_API_KEY` | Server-only Anthropic key with access to Haiku 5.5; optional for the sample demo |
+| `CRON_SECRET` | Random secret for Vercel's daily job recovery and authenticated queue wakeups |
 
 Generate secrets locally with Node's `crypto.randomBytes(32).toString('hex')`. Store them in your environment or password manager.
 
@@ -107,7 +108,7 @@ This exercises login, invitations, business isolation/settings, three locales, s
 
 ## Deployment
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for Render setup, verification, and the remaining provider setup. Infrastructure is described in `render.yaml`. The source project PDF is intentionally excluded from this public repository.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for Vercel + Neon setup, the Render alternative, and provider verification. Vercel configuration is in `vercel.ts`; Render infrastructure is in `render.yaml`. The source project PDF and local credentials are excluded from both Git and Vercel uploads.
 
 ## Security boundaries
 

@@ -7,6 +7,7 @@ import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { conversationMessages } from '@/lib/inbox';
 import { inquiryStatuses } from '@/lib/inbox-types';
 import { categorySchema } from '@/lib/business';
+import { wakeAutomation } from '@/lib/automation';
 type Context = { params: Promise<{ id: string; conversationId: string }> };
 export async function GET(_request: Request, { params }: Context) {
   try {
@@ -43,6 +44,7 @@ export async function PATCH(request: Request, { params }: Context) {
         .where(and(eq(conversations.id, conversationId), eq(conversations.agencyId, id)))
         .returning({ id: conversations.id });
       if (!row) throw new HttpError(404, 'notFound');
+      await wakeAutomation();
       return Response.json({ ok: true });
     }
     const fields = z

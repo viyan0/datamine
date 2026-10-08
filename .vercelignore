@@ -1,0 +1,13 @@
+.env*
+.local/
+.git/
+.next/
+node_modules/
+artifacts/
+tmp/
+coverage/
+playwright-report/
+test-results/
+*.log
+*.tsbuildinfo
+datamine.pdf

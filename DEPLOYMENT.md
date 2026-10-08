@@ -1,4 +1,20 @@
-# Render deployment
+# Deployment
+
+## Vercel (current demo host)
+
+The linked project is **viki-0760/datamine**, with Neon Free PostgreSQL **datamine-db** in Frankfurt. `vercel.ts` selects Next.js, the Frankfurt function region, a queue consumer, and a daily recovery job. Vercel runs Next.js directly; it does not run the local `npm start` companion loop.
+
+1. Connect a Neon PostgreSQL resource to **Production**. Use its pooled `DATABASE_URL` for the app. Keep `.env.local` for local development; pull cloud variables into an ignored file with `vercel env pull .local/production.env --environment=production`.
+2. Configure production `BETTER_AUTH_SECRET`, `CREDENTIAL_ENCRYPTION_KEY` (64 hex characters), `WHATSAPP_VERIFY_TOKEN`, `CRON_SECRET`, `ANTHROPIC_MODEL=claude-haiku-5-5`, `ANTHROPIC_API_KEY`, and `META_GRAPH_VERSION=v26.0`. Secrets must stay server-side. The app derives its production URL from Vercel; a custom canonical domain can use `BETTER_AUTH_URL`.
+3. Before deploying a schema change, run `scripts/migrate.ts` with the intended database's **unpooled** URL. Run `scripts/bootstrap.ts` once with an owner email and a strong temporary password. These commands are deliberately separate from preview builds. Never point the local smoke suites at this database.
+4. Run the checks, commit and push, then `vercel deploy --prod --scope viki-0760`. The current GitHub integration could not be connected, so pushes alone do not deploy. The CLI publishes the checked local source; `.vercelignore` excludes local secrets and test data.
+5. Verify `/api/health`, the three language routes, sign-in, and authenticated business APIs. Keep preview deployment protection enabled. Change the temporary owner password through Settings after delivery.
+
+Incoming webhooks, replies, business edits, and campaign actions publish a small queue wakeup. PostgreSQL still owns the jobs, leases, retry delays, and send claims. A bounded Vercel Function processes work, schedules another wake only when needed, and stops when idle. A secret-protected daily job recovers saved work after a missed queue publish. Webhooks return a retryable error if the wakeup fails; already-sent replies are still reported accurately. Actual campaign sends still require explicit approval in the app.
+
+Neon and production secrets are configured and migrations/bootstrap have completed. Current release and live test results are recorded in `DELIVERY.md`.
+
+## Render alternative
 
 The intended workspace is **Viyan's workspace** (`tea-d20g506mcj7s73b50i10`), using the repository `https://github.com/viyan0/datamine` and the `main` branch. App and database belong in Frankfurt so the app can use the private database connection.
 
@@ -37,7 +53,7 @@ Render background workers require a paid plan, so the free demo Blueprint does n
 
 ## Connect real WhatsApp businesses
 
-For this demo, use the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio, as selected by the owner. Replace its previous project's callback with the deployed Datamine `/api/webhooks/whatsapp` endpoint once the public Render service is healthy and the connection credentials are configured. Meta currently shows the `messages` subscription at Graph API v26.0; confirm the version and set `META_GRAPH_VERSION` when connecting. Use Meta's test sender and a verified recipient controlled by the owner. Temporary test tokens expire and must be refreshed before subsequent demos. Changing the callback disconnects incoming events from the old project; deleting that project's app, data, or hosting resources is not required.
+For this demo, use the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio, as selected by the owner. Replace its previous project's callback with the deployed Datamine `/api/webhooks/whatsapp` endpoint once the public service is healthy and the connection credentials are configured. Meta currently shows the `messages` subscription at Graph API v26.0; confirm the version and set `META_GRAPH_VERSION` when connecting. The test sender is **+1 (555) 632-3113**, phone ID `1328135173721537`, WABA ID `2248867165684591`. Use a verified recipient controlled by the owner. Temporary test tokens expire and must be refreshed before subsequent demos. Changing the callback disconnects incoming events from the old project; deleting that project's app, data, or hosting resources is not required.
 
 1. Create each business with its type and optional category hints, then invite its staff. Validate that a staff account cannot access another business's message endpoint.
 2. An agency owner/admin opens **WhatsApp connections → Connect number** and supplies its existing Meta phone number ID, WABA ID, system-user token, and app secret. The server checks the phone belongs to the WABA using Meta's API before encrypting the credentials.

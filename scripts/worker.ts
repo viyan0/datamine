@@ -39,7 +39,7 @@ await boss.work<{ id: string }>('connection-health', async (jobs) => {
   }
 });
 await boss.schedule('connection-health-sweep', '*/15 * * * *');
-console.log('Connection health worker ready. AI analysis is introduced in Phase 3.');
+console.log('Connection health worker ready.');
 let stopping = false;
 for (const signal of ['SIGTERM', 'SIGINT'])
   process.on(signal, async () => {

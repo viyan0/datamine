@@ -107,7 +107,7 @@ This exercises login, invitations, business isolation/settings, three locales, s
 
 ## Deployment
 
-Use [RAILWAY.md](RAILWAY.md) for the current Railway deployment. The root Dockerfile preserves migrations and automatic processing in the same app service. [DEPLOYMENT.md](DEPLOYMENT.md) and `render.yaml` retain the earlier Render alternative. The source project PDF is intentionally excluded from this public repository.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for Render setup, verification, and the remaining provider setup. Infrastructure is described in `render.yaml`. The source project PDF is intentionally excluded from this public repository.
 
 ## Security boundaries
 

@@ -20,5 +20,3 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run validate:render
-      - name: Build deployment image
-        run: docker build --tag datamine-demo:ci .

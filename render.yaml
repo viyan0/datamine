@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://render.com/schema/render.yaml.json
 # Free demo deployment. For the live pilot, upgrade the web/database plans
-# and deploy the optional worker described in DEPLOYMENT.md.
+# described in DEPLOYMENT.md. Automatic processing starts with the web app.
 services:
   - type: web
     name: datamine
@@ -39,6 +39,8 @@ services:
         value: v23.0
       - key: ANTHROPIC_MODEL
         value: claude-haiku-5-5
+      - key: ANTHROPIC_API_KEY
+        sync: false
 databases:
   - name: datamine-db
     plan: free

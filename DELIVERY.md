@@ -1,10 +1,10 @@
 # Phase 5 demo delivery
 
-## Railway and Meta setup in progress
+## Render and Meta setup in progress
 
-Hosting was changed to Railway at the owner's request. The repository now includes a Docker deployment, private-file exclusions, Railway URL support, and setup instructions in RAILWAY.md. Existing work was committed and pushed before account setup began.
+Render is the requested hosting target, using the existing Blueprint and PostgreSQL in Viyan's workspace. Railway-specific configuration has been removed. The connected Render workspace currently has no services or databases.
 
-The Meta creation wizard has Datamine's name, contact email, and WhatsApp use case entered, but **no app has been created yet**: the owner must select the intended existing business portfolio. Railway currently opens GitHub sign-in in Chrome; no Railway project or database has been created. A controlled WhatsApp recipient and an Anthropic API key are also needed for real end-to-end verification. Prepared forms and local tests are not evidence of a live deployment.
+Datamine is being created as a **new Meta app** with the WhatsApp use case. The existing names displayed by Meta are business portfolios, not apps to reuse. App creation is waiting for the owner to confirm whether to create a new Datamine business portfolio. No Meta app or portfolio has been created yet. A controlled WhatsApp test recipient and a server-side Anthropic API key are still required for live verification.
 
 ## Implemented
 
@@ -18,7 +18,7 @@ The Meta creation wizard has Datamine's name, contact email, and WhatsApp use ca
 - Enrollment, language, profile revision, and opt-out checks before delivery. Incoming Datamine messages hold offers while AI checks withdrawal; explicit STOP works without AI. A historical withdrawal cannot overwrite fresh explicit enrollment.
 - English, Arabic, and Sorani campaign interfaces and a prepared public campaign demo with simulated sends.
 
-No new package, Redis instance, or extra hosted worker is required. The automation process starts alongside the app. The optional older pg-boss worker remains for connection health only. The Render Blueprint is unchanged.
+No new package, Redis instance, or extra hosted worker is required. The automation process starts alongside the app. The optional older pg-boss worker remains for connection health only. The Render Blueprint requests the server-side Anthropic key during setup.
 
 ## Verification
 
@@ -31,7 +31,7 @@ All Anthropic and outbound Meta calls in integration tests are mocked. Real mode
 
 ## External setup still required — Phase 6
 
-- **Hosting:** Railway is now the requested target and sign-in is pending. The earlier Render free PostgreSQL creation returned HTTP 402 requiring billing setup; Render is retained only as an alternative. No public live URL has been provisioned or verified.
+- **Render:** the earlier free PostgreSQL creation returned HTTP 402 requiring billing setup at https://dashboard.render.com/billing. No database/web service or public live URL has been provisioned or verified.
 - **Anthropic:** configure a server-side API key with access to the selected model, claude-haiku-5-5, then verify automatic analysis with real conversations.
 - **WhatsApp:** connect real Meta assets, webhook subscriptions, the central Datamine sender, and approved templates in the intended languages. Test with controlled recipients.
 - **Pilot review:** native-speaker Arabic/Sorani review and a complete inquiry → opt-in → offer → opt-out test on managed PostgreSQL. Always-on hosting is needed for prompt processing; a sleeping free web service only processes jobs while awake.

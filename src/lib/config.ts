@@ -1,11 +1,6 @@
 export function appUrl() {
   return (
-    process.env.BETTER_AUTH_URL ||
-    (process.env.RAILWAY_PUBLIC_DOMAIN
-      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : undefined) ||
-    process.env.RENDER_EXTERNAL_URL ||
-    'http://localhost:3000'
+    process.env.BETTER_AUTH_URL || (process.env.RENDER_EXTERNAL_URL ?? 'http://localhost:3000')
   );
 }
 export function requiredSecret(name: string) {

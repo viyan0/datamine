@@ -11,12 +11,12 @@ https://dashboard.render.com/blueprint/new?repo=https://github.com/viyan0/datami
 The same two resources can be created through Render's API/MCP, using the build/start commands and environment variables in the Blueprint. Do not apply a second Blueprint on top of separately provisioned resources without first checking for duplicates.
 
 1. Ensure this repository is accessible to Render and the account's billing setup is complete if Render requests it.
-2. Set `CREDENTIAL_ENCRYPTION_KEY`, bootstrap email, and a strong bootstrap password. The Blueprint generates authentication and webhook verification secrets.
+2. Set `CREDENTIAL_ENCRYPTION_KEY`, bootstrap email, a strong bootstrap password, and `ANTHROPIC_API_KEY`. The Blueprint generates authentication and webhook verification secrets. The app uses Render's `RENDER_EXTERNAL_URL` for its public URL; do not set `BETTER_AUTH_URL` to localhost on the hosted service.
 3. Use the database's **internal** connection string. The Blueprint restricts external database access; it does not affect private networking.
 4. Build with `npm ci --include=dev && npm run build`. Start with `npm start`.
 5. Startup applies versioned Drizzle migrations, bootstraps the first owner if needed, starts the companion automation loop, and binds Next.js to `0.0.0.0:$PORT`. Startup fails on migration errors rather than serving a partially initialized app.
 6. Wait for Render's deploy status to become `live`, then check `/api/health` for HTTP 200 and `database: connected`.
-7. Verify `/en`, `/ar`, `/ckb` and the sample tour. Sign in with the bootstrap account, create an agency, and test an invitation. Change the initial password and remove the bootstrap password environment variable.
+7. Verify `/en`, `/ar`, `/ckb` and the sample tour. Sign in with the bootstrap account, create a business, and test an invitation. Change the initial password and remove the bootstrap password environment variable.
 
 Render currently requires billing information for this account: the initial free PostgreSQL creation attempt returned **HTTP 402**. No database was created by that failed attempt. Deployment status and final URLs are tracked in `DELIVERY.md`.
 
@@ -36,6 +36,8 @@ Phase 1 inbound ingestion commits synchronously; it does not depend on a worker 
 Render background workers require a paid plan, so the free demo Blueprint does not provision one. Failed health-check jobs retry with backoff and remain in pg-boss for inspection. Automatic AI analysis and campaigns use the companion process started by npm start, not this optional health worker. Jobs persist in PostgreSQL. SIGTERM stops new work; abandoned claims recover after 90 seconds. The free web service processes work only while awake; an always-on instance is needed for prompt background processing.
 
 ## Connect real WhatsApp businesses
+
+For this demo, create a new Meta app named Datamine with the WhatsApp use case. Meta requires a business portfolio to own the app; creating the app does not reuse an existing app. Use the owner's chosen portfolio, or create a new Datamine portfolio when confirmed. Connect Meta's test sender and a verified recipient controlled by the owner. Temporary test tokens expire and must be refreshed before subsequent demos.
 
 1. Create each business with its type and optional category hints, then invite its staff. Validate that a staff account cannot access another business's message endpoint.
 2. An agency owner/admin opens **WhatsApp connections → Connect number** and supplies its existing Meta phone number ID, WABA ID, system-user token, and app secret. The server checks the phone belongs to the WABA using Meta's API before encrypting the credentials.

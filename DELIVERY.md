@@ -1,10 +1,10 @@
 # Phase 5 demo delivery
 
-## Render and Meta setup in progress
+## Vercel and Meta setup in progress
 
-Render is the requested hosting target, using the existing Blueprint and PostgreSQL in Viyan's workspace. Railway-specific configuration has been removed. The connected Render workspace currently has no services or databases.
+The owner connected Vercel after Render required billing information. The Vercel project **viki-0760/datamine** now exists on the Hobby plan and is linked locally. The CLI can access the workspace; the app connector currently returns a workspace permission error. Neon Free PostgreSQL in Frankfurt was selected, but provisioning is waiting for the owner to accept the marketplace terms. No database or deployment has been created on Vercel yet. The GitHub repository connection attempt also failed; a deployment from the local committed source remains an option. Vercel authentication files and pulled environment files are excluded from Git. The existing local demo environment is preserved.
 
-The owner selected the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio for Datamine and authorized replacing its previous project connection. Its WhatsApp callback currently points to the previous Railway project; the `messages` subscription uses Graph API v26.0. The callback has not been changed: Datamine first needs a working public Render URL. No new Meta app or portfolio is needed. A controlled WhatsApp test recipient and a server-side Anthropic API key are still required for live verification.
+The owner selected the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio for Datamine and authorized replacing its previous project connection. Its WhatsApp callback currently points to the previous Railway project; the `messages` subscription uses Graph API v26.0. The callback has not been changed: Datamine first needs a working public deployment. No new Meta app or portfolio is needed. A controlled WhatsApp test recipient and a server-side Anthropic API key are still required for live verification.
 
 ## Implemented
 
@@ -31,7 +31,7 @@ All Anthropic and outbound Meta calls in integration tests are mocked. Real mode
 
 ## External setup still required — Phase 6
 
-- **Render:** the earlier free PostgreSQL creation returned HTTP 402 requiring billing setup at https://dashboard.render.com/billing. No database/web service or public live URL has been provisioned or verified.
+- **Vercel:** accept Neon marketplace terms, provision PostgreSQL, configure server secrets and migrations, and adapt automatic processing to Vercel's managed background execution before deploying. The current startup companion loop does not run unchanged as a Vercel Function. No public live URL has been provisioned or verified. Render remains an alternative; its earlier free database creation returned HTTP 402 requiring billing setup.
 - **Anthropic:** configure a server-side API key with access to the selected model, claude-haiku-5-5, then verify automatic analysis with real conversations.
 - **WhatsApp:** connect real Meta assets, webhook subscriptions, the central Datamine sender, and approved templates in the intended languages. Test with controlled recipients.
 - **Pilot review:** native-speaker Arabic/Sorani review and a complete inquiry → opt-in → offer → opt-out test on managed PostgreSQL. Always-on hosting is needed for prompt processing; a sleeping free web service only processes jobs while awake.

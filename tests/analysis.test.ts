@@ -180,3 +180,48 @@ test('a real quote cannot be used to smuggle an invented fact value', () => {
     AnalysisError,
   );
 });
+
+test('capitalized AI values keep the exact source spelling without accepting invented evidence', () => {
+  const messages: SourceMessage[] = [
+    {
+      id: 'customer-laptop',
+      direction: 'inbound',
+      body: 'I want price of the laptop (16+ GB).',
+      timestamp: '2026-10-08T16:58:00Z',
+    },
+  ];
+  const quote = messages[0].body;
+  const value = {
+    ...valid,
+    services: ['Laptop pricing'],
+    subject: { value: 'Laptop', quote, messageId: messages[0].id },
+    facts: [
+      { label: 'Request', value: 'Price of the laptop (16+ GB)', quote, messageId: messages[0].id },
+    ],
+    stopOffers: null,
+  };
+  const result = validateAnalysis(value, messages);
+  assert.equal(result.subject?.value, 'laptop');
+  assert.equal(result.facts[0].value, 'price of the laptop (16+ GB)');
+  assert.throws(
+    () =>
+      validateAnalysis({ ...value, subject: { ...value.subject, value: 'Laptop.*' } }, messages),
+    AnalysisError,
+  );
+  assert.throws(
+    () => validateAnalysis({ ...value, subject: { ...value.subject, value: 'MacBook' } }, messages),
+    AnalysisError,
+  );
+  assert.throws(
+    () =>
+      validateAnalysis(
+        { ...value, subject: { ...value.subject, quote: quote.replace('laptop', 'Laptop') } },
+        messages,
+      ),
+    AnalysisError,
+  );
+  assert.throws(
+    () => validateAnalysis(value, [{ ...messages[0], direction: 'outbound' }]),
+    AnalysisError,
+  );
+});

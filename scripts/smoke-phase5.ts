@@ -4,6 +4,7 @@ import { getPool } from '../src/db';
 import { encrypt } from '../src/lib/security';
 import { ingestWebhook } from '../src/lib/webhook';
 import { processPendingAnalysis } from '../src/lib/analysis';
+import { listConversations } from '../src/lib/inbox';
 import { approvedTemplates } from '../src/lib/meta';
 import {
   prepareTemplate,
@@ -315,6 +316,11 @@ try {
   assert.equal(c.destination, 'walnut shelf');
   assert.equal(c.inquiry_status, 'inProgress');
   assert.equal(c.analysis.result.facts[0].label, 'Requested finish');
+  assert.deepEqual(
+    (await listConversations(business)).find((item) => item.id === thread)?.categories,
+    ['Bespoke shelving', 'Custom woodworking'],
+    'Inbox exposes dynamically generated categories from the current analysis version',
+  );
   const count = aiCalls;
   await runAnalysis();
   assert.equal(aiCalls, count, 'Unchanged webhook input never calls Haiku twice');

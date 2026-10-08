@@ -6,6 +6,7 @@ import { HttpError } from './access';
 import { decrypt } from './security';
 import { sendMetaText } from './meta';
 import { replyWindowOpen, type Conversation, type InboxMessage } from './inbox-types';
+import { analysisVersion } from './analysis-types';
 
 export async function getConversation(agencyId: string, id: string) {
   const [row] = await getDb()
@@ -39,7 +40,7 @@ export async function listConversations(agencyId: string): Promise<Conversation[
     destination: c.destination,
     note: c.note,
     manualFields: c.manualFields,
-    categories: c.analysis?.version === 3 ? c.analysis.result.services : [],
+    categories: c.analysis?.version === analysisVersion ? c.analysis.result.services : [],
     ...rest,
     service: c.service as Conversation['service'],
     inquiryStatus: c.inquiryStatus as Conversation['inquiryStatus'],

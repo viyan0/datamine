@@ -1,0 +1,7 @@
+node_modules
+.next
+.local
+tmp
+artifacts
+package-lock.json
+drizzle/meta

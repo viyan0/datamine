@@ -1,0 +1,60 @@
+{
+  "name": "datamine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.14.0 <25"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "node scripts/start.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "tsx --test tests/*.test.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:bootstrap": "tsx scripts/bootstrap.ts",
+    "worker": "tsx scripts/worker.ts",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "db:local": "tsx scripts/local-db.ts",
+    "test:smoke": "node --env-file=.env.local --import tsx scripts/smoke.ts",
+    "validate:render": "node scripts/validate-blueprint.mjs"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "^1.4.0",
+    "better-auth": "^1.7.7",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.3",
+    "lucide-react": "^1.53.0",
+    "next": "^16.4.0",
+    "next-intl": "^4.14.9",
+    "pg": "^8.23.1",
+    "pg-boss": "^12.37.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.4",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.0",
+    "prettier": "^3.9.9",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "yaml": "^2.9.1"
+  }
+}

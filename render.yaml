@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+# Free demo deployment. For the live pilot, upgrade the web/database plans
+# and deploy the optional worker described in DEPLOYMENT.md.
+services:
+  - type: web
+    name: datamine
+    runtime: node
+    region: frankfurt
+    plan: free
+    branch: main
+    autoDeployTrigger: commit
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.19.0
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: '1'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: datamine-db
+          property: connectionString
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: CREDENTIAL_ENCRYPTION_KEY
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        generateValue: true
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: BOOTSTRAP_ADMIN_NAME
+        value: Workspace owner
+      - key: META_GRAPH_VERSION
+        value: v23.0
+      - key: ANTHROPIC_MODEL
+        value: claude-haiku-5-5
+databases:
+  - name: datamine-db
+    plan: free
+    region: frankfurt
+    postgresMajorVersion: '17'
+    ipAllowList: []

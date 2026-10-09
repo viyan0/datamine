@@ -9,6 +9,13 @@ export const automationDueSql = `
     select case when reply_status='queued' then now() else reply_started_at + interval '91 seconds' end
     from customer_consents where reply_status in ('queued','submitting')
     union all
+    select greatest(coalesce(due_at, now()), case when status='processing'
+      then started_at + interval '91 seconds' else coalesce(due_at, now()) end)
+    from recommendation_jobs where $1 and status in ('pending', 'processing', 'error') and due_at is not null
+    union all
+    select case when status='queued' then now() else started_at + interval '91 seconds' end
+    from recommendation_jobs where status in ('queued','submitting')
+    union all
     select greatest(due_at, case when run_id is not null
       then started_at + interval '91 seconds' else due_at end)
     from campaigns where $1 and status in ('matching', 'error') and due_at is not null
@@ -19,6 +26,8 @@ export const automationDueSql = `
     select created_at + interval '91 seconds' from messages
     where delivery_status = 'submitting' and (type = 'template' or exists (
       select 1 from campaign_recipients r where r.id = messages.request_id
+    ) or exists (
+      select 1 from recommendation_jobs r where r.id = messages.request_id
     ))
     union all
     select now() from campaigns c where status = 'sending' and not exists (

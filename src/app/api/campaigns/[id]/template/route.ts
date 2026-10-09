@@ -2,7 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
 import { agencies, campaigns } from '@/db/schema';
-import { requireAgency, requirePlatformAdmin, HttpError } from '@/lib/access';
+import { requireAgency, requireSession, HttpError } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { attachCampaignTemplate, campaignSender } from '@/lib/campaigns';
 import { createMarketingTemplate, templateBodySchema, TemplateError } from '@/lib/meta-templates';
@@ -15,7 +15,7 @@ export const maxDuration = 60;
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     checkOrigin(request);
-    await requirePlatformAdmin();
+    await requireSession();
     const { id } = await params;
     const input = z
       .discriminatedUnion('action', [
@@ -30,6 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       .where(and(eq(campaigns.id, id), inArray(campaigns.status, ['ready', 'matching', 'error'])));
     if (!row) throw new HttpError(409, 'campaignLocked');
     const c = row.campaign;
+    await requireAgency(c.agencyId, true);
     if (input.action === 'draft')
       return Response.json(
         await draftOfferTemplate({
@@ -39,7 +40,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           businessName: row.businessName,
         }),
       );
-    const sender = await campaignSender();
+    const sender = await campaignSender(c.agencyId, c.senderId);
     if (!sender) throw new HttpError(409, 'campaignSenderMissing');
     await requireAgency(sender.agencyId, true);
     const template = await createMarketingTemplate({

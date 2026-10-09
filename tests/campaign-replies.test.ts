@@ -9,11 +9,18 @@ import { getDb, getPool } from '../src/db';
 import * as schema from '../src/db/schema';
 import { encrypt } from '../src/lib/security';
 import { campaignReplyBody } from '../src/lib/campaign-delivery';
+import type { SavedAnalysis } from '../src/lib/analysis-types';
+import { clearCustomerData } from '../src/lib/consent';
+import { updateConversationDetails } from '../src/lib/inbox';
 import {
   deliverRecipient,
   launchCampaign,
   listCampaigns,
   matchCampaign,
+  campaignSender,
+  attachCampaignTemplate,
+  publishCampaign,
+  networkAvailability,
 } from '../src/lib/campaigns';
 
 test('real campaign replies respect sender windows, consent, and durable send claims', async (t) => {
@@ -43,6 +50,15 @@ test('real campaign replies respect sender windows, consent, and durable send cl
     if (String(url) === 'https://openrouter.ai/api/v1/chat/completions') {
       const request = JSON.parse(String(init?.body));
       const input = JSON.parse(request.messages[1].content);
+      assert.match(request.messages[0].content, /blockedTopics override interests/);
+      assert.ok(
+        input.customers.every((p: { blockedTopics: unknown }) => Array.isArray(p.blockedTopics)),
+      );
+      assert.ok(
+        input.customers.every(
+          (p: { interests: string[] }) => p.interests.length === 1 && p.interests[0] === 'Phones',
+        ),
+      );
       return Response.json({
         model: 'anthropic/claude-haiku-5.5',
         choices: [
@@ -73,21 +89,45 @@ test('real campaign replies respect sender windows, consent, and durable send cl
           },
         ],
       });
-    assert.match(String(url), /^https:\/\/graph.facebook.com\/v26.0\/12345\/messages$/);
+    assert.match(String(url), /^https:\/\/graph.facebook.com\/v26.0\/(12345|66666)\/messages$/);
     sends.push(JSON.parse(String(init?.body)));
     if (ambiguous) throw new Error('Response lost after submission');
     return Response.json({ messages: [{ id: `test-message-${sends.length}` }] });
   };
   const recent = () => new Date(Date.now() - 60_000);
   const expired = () => new Date(Date.now() - 25 * 3600_000);
+  const savedAnalysis: SavedAnalysis = {
+    result: {
+      language: 'en',
+      services: ['Phones'],
+      intent: 'Phone purchase',
+      inquiryStatus: 'new',
+      summary: 'Interested in phones.',
+      nextStep: 'Share available phones.',
+      reviewNote: null,
+      subject: null,
+      facts: [],
+      stopOffers: null,
+    },
+    model: 'test',
+    version: 4,
+    locale: 'en',
+    createdAt: recent().toISOString(),
+    sourceHash: 'test',
+    sourceMessageIds: [],
+    inputTokens: 0,
+    outputTokens: 0,
+    latencyMs: 0,
+  };
   try {
     await migrate(db, { migrationsFolder: './drizzle' });
     await db
       .insert(schema.user)
       .values({ id: 'owner', name: 'Test owner', email: 'test@example.com' });
-    await db
-      .insert(schema.agencies)
-      .values({ id: 'business', name: 'Test business', slug: 'test' });
+    await db.insert(schema.agencies).values([
+      { id: 'business', name: 'Test business', slug: 'test' },
+      { id: 'different-business', name: 'Different business', slug: 'different' },
+    ]);
     await db.insert(schema.connections).values(
       ['sender', 'other'].map((id, i) => ({
         id,
@@ -101,15 +141,39 @@ test('real campaign replies respect sender windows, consent, and durable send cl
         campaignSender: !i,
       })),
     );
+    await db.insert(schema.connections).values({
+      id: 'foreign-sender',
+      agencyId: 'different-business',
+      label: 'Own business sender',
+      phoneNumberId: '66666',
+      wabaId: '222',
+      displayPhone: 'test only',
+      accessTokenEncrypted: encrypt('test-only', 'foreign-sender:token'),
+      appSecretEncrypted: 'unused',
+      campaignSender: false,
+    });
     await db.insert(schema.sharedProfiles).values(
       ['open', 'expired', 'other', 'future', 'missing'].map((id) => ({
         id,
         phone: id,
         name: id,
         language: 'en',
-        interests: ['Phones'],
+        interests: ['Phones', 'Private interest from another business'],
         consentVersion: 'test',
         consentAt: new Date(),
+      })),
+    );
+    await db.insert(schema.customerConsents).values(
+      ['open', 'expired', 'other', 'future', 'missing'].map((phone) => ({
+        phone,
+        status: 'accepted',
+        locale: 'en',
+        noticeVersion: 'test',
+        decisionAt: new Date(),
+        lastInboundAt: recent(),
+        replyConnectionId: phone === 'missing' ? 'foreign-sender' : 'sender',
+        replyMessageId: randomUUID(),
+        replyStatus: 'sent',
       })),
     );
     await db.insert(schema.conversations).values(
@@ -119,6 +183,7 @@ test('real campaign replies respect sender windows, consent, and durable send cl
         connectionId: id === 'other' ? 'other' : 'sender',
         contactPhone: id,
         name: id,
+        analysis: savedAnalysis,
         lastInboundAt:
           id === 'expired'
             ? expired()
@@ -128,6 +193,16 @@ test('real campaign replies respect sender windows, consent, and durable send cl
         lastMessageAt: recent(),
       })),
     );
+    await db.insert(schema.conversations).values({
+      id: 'foreign-chat',
+      agencyId: 'different-business',
+      connectionId: 'foreign-sender',
+      contactPhone: 'missing',
+      name: 'Foreign customer',
+      analysis: savedAnalysis,
+      lastInboundAt: recent(),
+      lastMessageAt: recent(),
+    });
     async function offer(template: typeof pending | null = null) {
       const id = randomUUID();
       await db.insert(schema.campaigns).values({
@@ -167,7 +242,8 @@ test('real campaign replies respect sender windows, consent, and durable send cl
           .from(schema.campaignRecipients)
           .where(eq(schema.campaignRecipients.campaignId, id));
         assert.equal(rows.filter((r) => r.status === 'queued').length, 1);
-        assert.equal(rows.filter((r) => r.status === 'windowClosed').length, 4);
+        assert.equal(rows.filter((r) => r.status === 'windowClosed').length, 3);
+        assert.ok(rows.every((r) => r.profileId !== 'missing'));
         const r = await recipient(id);
         await deliverRecipient(r.id);
         await deliverRecipient(r.id);
@@ -247,6 +323,211 @@ test('real campaign replies respect sender windows, consent, and durable send cl
       assert.equal((await recipient(id)).status, 'uncertain');
       assert.equal(sends.length, 3);
     });
+    await t.test(
+      'businesses see only their campaigns and send through their own unflagged sender',
+      async () => {
+        ambiguous = false;
+        assert.equal((await campaignSender('different-business'))?.id, 'foreign-sender');
+        assert.equal(await campaignSender('different-business', 'sender'), undefined);
+        const id = randomUUID();
+        await db.insert(schema.campaigns).values({
+          id,
+          agencyId: 'different-business',
+          createdBy: 'owner',
+          title: 'Own offer',
+          offerText: 'Phone offer for our own customers.',
+          locale: 'en',
+        });
+        await matchCampaign(id);
+        const own = await listCampaigns(['different-business'], false);
+        assert.deepEqual(
+          own.map((c) => c.id),
+          [id],
+        );
+        assert.deepEqual(
+          own[0].recipients?.map((p) => p.phone),
+          ['missing'],
+        );
+        assert.deepEqual(own[0].recipients?.[0].interests, ['Phones']);
+        assert.ok((await listCampaigns(['business'], false)).every((c) => c.id !== id));
+        await assert.rejects(
+          () => attachCampaignTemplate(id, pending, 'sender'),
+          /campaignSenderMissing/,
+        );
+        await launchCampaign(id, 'reply');
+        const [r] = await db
+          .select()
+          .from(schema.campaignRecipients)
+          .where(eq(schema.campaignRecipients.campaignId, id));
+        await deliverRecipient(r.id);
+        assert.equal(sends.length, 4);
+        assert.equal(sends[3].to, 'missing');
+      },
+    );
+    await t.test(
+      'consent and topic revisions cancel queued offers before external submission',
+      async () => {
+        const id = await offer();
+        await launchCampaign(id, 'reply');
+        await db
+          .update(schema.sharedProfiles)
+          .set({ blockedTopics: ['Phones'], updatedAt: new Date(Date.now() + 1) })
+          .where(eq(schema.sharedProfiles.id, 'open'));
+        await deliverRecipient((await recipient(id)).id);
+        assert.equal((await recipient(id)).status, 'cancelled');
+        assert.equal(sends.length, 4);
+        await db
+          .update(schema.sharedProfiles)
+          .set({ blockedTopics: [], updatedAt: new Date() })
+          .where(eq(schema.sharedProfiles.id, 'open'));
+        const declined = await offer();
+        await launchCampaign(declined, 'reply');
+        await db
+          .update(schema.customerConsents)
+          .set({ status: 'declined' })
+          .where(eq(schema.customerConsents.phone, 'open'));
+        await deliverRecipient((await recipient(declined)).id);
+        assert.equal((await recipient(declined)).status, 'cancelled');
+        assert.equal(sends.length, 4);
+        const newOffer = await offer();
+        assert.ok(
+          !(await listCampaigns(['business'], false))
+            .find((c) => c.id === newOffer)!
+            .recipients!.some((r) => r.phone === 'open'),
+        );
+      },
+    );
+    await t.test('network availability is explicit, expires, and can be withdrawn', async () => {
+      const id = await offer();
+      assert.equal(
+        (await listCampaigns(['business'], false)).find((c) => c.id === id)?.networkEnabled,
+        false,
+      );
+      assert.throws(
+        () => networkAvailability(true, new Date(Date.now() - 1).toISOString()),
+        /offerExpired/,
+      );
+      assert.throws(
+        () => networkAvailability(true, new Date(Date.now() + 100 * 86400000).toISOString()),
+        /offerExpired/,
+      );
+      assert.throws(() => networkAvailability(true), /offerExpired/);
+      const expiry = new Date(Date.now() + 86400000).toISOString();
+      await publishCampaign(id, true, expiry);
+      let saved = (await listCampaigns(['business'], false)).find((c) => c.id === id)!;
+      assert.equal(saved.networkEnabled, true);
+      assert.equal(saved.networkExpiresAt, expiry);
+      await publishCampaign(id, false);
+      saved = (await listCampaigns(['business'], false)).find((c) => c.id === id)!;
+      assert.equal(saved.networkEnabled, false);
+      assert.equal(saved.networkExpiresAt, null);
+    });
+    await t.test(
+      'manual topic corrections and analysis resets invalidate queued offers',
+      async () => {
+        await db
+          .update(schema.customerConsents)
+          .set({ status: 'accepted' })
+          .where(eq(schema.customerConsents.phone, 'open'));
+        const id = await offer();
+        await launchCampaign(id, 'reply');
+        const [before] = await db
+          .select()
+          .from(schema.sharedProfiles)
+          .where(eq(schema.sharedProfiles.id, 'open'));
+        await updateConversationDetails('business', 'open', { destination: 'Laptops' });
+        const [corrected] = await db
+          .select()
+          .from(schema.sharedProfiles)
+          .where(eq(schema.sharedProfiles.id, 'open'));
+        assert.ok(corrected.updatedAt.getTime() > before.updatedAt.getTime());
+        assert.equal((await recipient(id)).status, 'cancelled');
+        await deliverRecipient((await recipient(id)).id);
+        assert.equal(sends.length, 4);
+        await assert.rejects(
+          () =>
+            updateConversationDetails('different-business', 'open', {
+              destination: 'Wrong business',
+            }),
+          /notFound/,
+        );
+        await updateConversationDetails('business', 'open', { note: 'Private staff note' });
+        const [noteOnly] = await db
+          .select()
+          .from(schema.sharedProfiles)
+          .where(eq(schema.sharedProfiles.id, 'open'));
+        assert.equal(
+          noteOnly.updatedAt.getTime(),
+          corrected.updatedAt.getTime(),
+          'Private notes are not marketing preferences',
+        );
+        const reset = await offer();
+        await launchCampaign(reset, 'reply');
+        await updateConversationDetails('business', 'open', { automatic: true });
+        const [held] = await db
+          .select()
+          .from(schema.sharedProfiles)
+          .where(eq(schema.sharedProfiles.id, 'open'));
+        const [thread] = await db
+          .select()
+          .from(schema.conversations)
+          .where(eq(schema.conversations.id, 'open'));
+        assert.equal(held.offerHold, true);
+        assert.equal(thread.analysisStatus, 'pending');
+        assert.equal(thread.analysis, null);
+        assert.equal((await recipient(reset)).status, 'cancelled');
+        await deliverRecipient((await recipient(reset)).id);
+        assert.equal(sends.length, 4);
+        await db
+          .update(schema.conversations)
+          .set({ analysis: savedAnalysis, analysisStatus: 'complete' })
+          .where(eq(schema.conversations.id, 'open'));
+        await db
+          .update(schema.sharedProfiles)
+          .set({ offerHold: false, updatedAt: new Date() })
+          .where(eq(schema.sharedProfiles.id, 'open'));
+      },
+    );
+    await t.test(
+      'deleting customer data removes a queued offer and never recreates message data',
+      async () => {
+        await db
+          .update(schema.customerConsents)
+          .set({ status: 'accepted' })
+          .where(eq(schema.customerConsents.phone, 'open'));
+        const id = await offer();
+        await launchCampaign(id, 'reply');
+        const queued = await recipient(id);
+        await db.transaction(async (tx) => {
+          await tx
+            .select()
+            .from(schema.customerConsents)
+            .where(eq(schema.customerConsents.phone, 'open'))
+            .for('update');
+          await tx
+            .update(schema.customerConsents)
+            .set({ status: 'declined' })
+            .where(eq(schema.customerConsents.phone, 'open'));
+          await clearCustomerData(tx, 'open');
+        });
+        await deliverRecipient(queued.id);
+        assert.equal(sends.length, 4);
+        assert.equal(
+          (await db.select().from(schema.messages).where(eq(schema.messages.contactPhone, 'open')))
+            .length,
+          0,
+        );
+        assert.equal(
+          (
+            await db
+              .select()
+              .from(schema.sharedProfiles)
+              .where(eq(schema.sharedProfiles.phone, 'open'))
+          ).length,
+          0,
+        );
+      },
+    );
   } finally {
     globalThis.fetch = originalFetch;
     await getPool().end();

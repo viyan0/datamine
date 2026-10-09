@@ -17,9 +17,11 @@ import {
 } from '../src/lib/campaigns';
 
 const base = process.env.BETTER_AUTH_URL || 'http://localhost:3000';
+const databaseUrl = new URL(process.env.DATABASE_URL || 'postgresql://invalid');
 if (
   new URL(base).hostname !== 'localhost' ||
-  !process.env.DATABASE_URL?.includes('127.0.0.1:54329')
+  databaseUrl.hostname !== '127.0.0.1' ||
+  databaseUrl.port !== '54329'
 )
   throw new Error(
     'Only run against the isolated local database, with AUTOMATION_DISABLED=true on the app.',
@@ -27,12 +29,15 @@ if (
 const db = getPool(),
   business = randomUUID(),
   connection = randomUUID(),
+  otherBusiness = randomUUID(),
+  otherConnection = randomUUID(),
   phone = `964700${Date.now().toString().slice(-6)}`,
   number = Date.now().toString(),
   secret = randomUUID();
-const people = Array.from({ length: 5 }, () => randomUUID()),
+const people = Array.from({ length: 6 }, () => randomUUID()),
   offerIds: string[] = [],
-  userEmail = `phase5-${randomUUID()}@example.com`;
+  userEmail = `phase5-${randomUUID()}@example.com`,
+  ownerEmail = `phase5-owner-${randomUUID()}@example.com`;
 const originalFetch = globalThis.fetch,
   originalKey = process.env.OPENROUTER_API_KEY,
   originalModel = process.env.OPENROUTER_MODEL;
@@ -42,8 +47,7 @@ let thread = '',
   failAi = false,
   invalidMatch = false,
   sendCount = 0,
-  ambiguous = false,
-  stopOffers = false;
+  ambiguous = false;
 let waitAi: Promise<void> | null = null,
   aiEntered: (() => void) | undefined,
   aiCalls = 0,
@@ -51,12 +55,12 @@ let waitAi: Promise<void> | null = null,
   candidateIds: string[] = [];
 const template = {
   id: 'test-approved',
-  name: 'shelf_offer',
+  name: 'woodwork_offer',
   language: 'en',
   status: 'APPROVED',
   category: 'MARKETING',
   components: [
-    { type: 'BODY', text: 'Custom walnut shelves available. Reply STOP to stop Datamine offers.' },
+    { type: 'BODY', text: 'Custom oak desks available. Reply STOP to stop Datamine offers.' },
   ],
 };
 async function row(table: string, id: string) {
@@ -117,7 +121,7 @@ async function newOffer(owner: string) {
     {
       agencyId: business,
       title: 'Woodwork offer',
-      offerText: 'Custom walnut shelves available this week.',
+      offerText: 'Custom oak desks available this week.',
       locale: 'en',
     },
     owner,
@@ -152,10 +156,18 @@ globalThis.fetch = async (input, init) => {
             !('phone' in p) && !('name' in p) && !('messages' in p) && !('note' in p),
         ),
       );
+      assert.ok(
+        source.customers.every(
+          (p: { interests: string[]; blockedTopics: unknown }) =>
+            Array.isArray(p.blockedTopics) &&
+            !p.interests.includes('Other business private interest'),
+        ),
+      );
+      assert.match(payload.messages[0].content, /blockedTopics override interests/);
       candidateIds = source.customers.map((p: { id: string }) => p.id);
       lastOffer = source.offer;
       result = {
-        summary: 'Custom shelves offer.',
+        summary: 'Custom woodwork offer.',
         categories: ['Custom woodworking'],
         matches: invalidMatch
           ? [{ id: 'invented-customer', reason: 'invalid' }]
@@ -163,7 +175,7 @@ globalThis.fetch = async (input, init) => {
               .filter((p: { id: string }) => p.id === people[0])
               .map((p: { id: string }) => ({
                 id: p.id,
-                reason: 'Customer explicitly requested custom shelves.',
+                reason: 'Customer explicitly requested custom woodwork.',
               })),
       };
     } else {
@@ -172,9 +184,6 @@ globalThis.fetch = async (input, init) => {
       const m = source.messages.findLast((m: { body: string }) => m.body.includes(subject));
       assert.ok(m);
       const fact = { value: subject, quote: subject, messageId: m.id };
-      const stop = source.messages.findLast(
-        (m: { body: string }) => m.body === 'Please stop promotional messages.',
-      );
       result = {
         language: 'en',
         services: [category, 'Custom woodworking'],
@@ -185,7 +194,7 @@ globalThis.fetch = async (input, init) => {
         reviewNote: null,
         subject: fact,
         facts: [{ label: 'Requested finish', ...fact }],
-        stopOffers: stopOffers ? { value: stop.body, quote: stop.body, messageId: stop.id } : null,
+        stopOffers: null,
       };
     }
     return Response.json({
@@ -246,7 +255,7 @@ try {
     user.id,
   ]);
   await db.query(
-    "insert into whatsapp_connections(id,agency_id,label,phone_number_id,waba_id,display_phone,access_token_encrypted,app_secret_encrypted,campaign_sender) values($1,$2,'Test sender',$3,$3,$4,$5,$6,true)",
+    "insert into whatsapp_connections(id,agency_id,label,phone_number_id,waba_id,display_phone,access_token_encrypted,app_secret_encrypted,campaign_sender) values($1,$2,'Test sender',$3,$3,$4,$5,$6,false)",
     [
       connection,
       business,
@@ -254,6 +263,20 @@ try {
       phone,
       encrypt('mock-token', `${connection}:token`),
       encrypt(secret, `${connection}:secret`),
+    ],
+  );
+  await db.query("insert into agencies(id,name,slug) values($1,'Other business',$1)", [
+    otherBusiness,
+  ]);
+  await db.query(
+    "insert into whatsapp_connections(id,agency_id,label,phone_number_id,waba_id,display_phone,access_token_encrypted,app_secret_encrypted) values($1,$2,'Other sender',$3,$3,$4,$5,$6)",
+    [
+      otherConnection,
+      otherBusiness,
+      number + '9',
+      phone + '4',
+      encrypt('mock-token', `${otherConnection}:token`),
+      encrypt(secret, `${otherConnection}:secret`),
     ],
   );
   assert.equal((await request('/api/campaigns')).status, 401);
@@ -281,6 +304,30 @@ try {
   assert.equal(viewerLogin.status, 200, viewerLogin.data.message || 'Viewer sign-in failed');
   assert.ok(viewerLogin.cookie);
   const viewer = viewerLogin.cookie;
+  const ownerInvite = await request(
+    '/api/invitations',
+    'POST',
+    { agencyId: business, email: ownerEmail, role: 'owner', locale: 'en' },
+    owner,
+  );
+  assert.equal(ownerInvite.status, 201);
+  assert.equal(
+    (
+      await request('/api/invitations/accept', 'POST', {
+        token: new URL(ownerInvite.data.url).hash.slice(1),
+        name: 'Business owner',
+        password: pass,
+      })
+    ).status,
+    200,
+  );
+  const businessOwnerLogin = await request('/api/auth/sign-in/email', 'POST', {
+    email: ownerEmail,
+    password: pass,
+  });
+  assert.equal(businessOwnerLogin.status, 200);
+  const businessOwner = businessOwnerLogin.cookie;
+
   assert.equal(
     (
       await request(
@@ -390,31 +437,62 @@ try {
   assert.equal(c.analysis_status, 'complete');
   assert.equal(c.analysis_run_id, null);
 
-  for (let i = 0; i < people.length; i++)
+  // Keep the profile created by consent and analysis, then add isolated exclusion fixtures.
+  people[0] = (await db.query('select id from shared_profiles where phone=$1', [phone])).rows[0].id;
+  await db.query(
+    'update shared_profiles set interests=\'["Other business private interest"]\',updated_at=now() where id=$1',
+    [people[0]],
+  );
+  for (let i = 1; i < people.length; i++) {
+    const customerPhone = phone + String(i);
     await db.query(
-      "insert into shared_profiles(id,phone,name,language,interests,destination,status,offer_hold,consent_version,consent_at) values($1,$2,$3,$4,'[\"custom shelves\"]','Custom shelves',$5,$6,'test',now())",
+      "insert into shared_profiles(id,phone,name,language,interests,destination,status,offer_hold,consent_version,consent_at) values($1,$2,$3,$4,'[\"Other business private interest\"]','Private request',$5,$6,'test',now())",
       [
         people[i],
-        i === 0 ? phone : phone + String(i),
-        'Private customer ' + i,
+        customerPhone,
+        'Test customer ' + i,
         i === 3 ? 'ar' : 'en',
         i === 1 ? 'optedOut' : 'active',
         i === 2,
       ],
     );
-  await db.query("update shared_profiles set interests='[]' where id=$1", [people[4]]);
+    const customerConnection = i === 4 ? otherConnection : connection;
+    await db.query(
+      "insert into customer_consents(phone,status,locale,notice_version,notice_at,last_inbound_at,reply_connection_id,reply_message_id,reply_status) values($1,$2,'en','test',now(),now(),$3,$4,'read')",
+      [customerPhone, i === 5 ? 'pending' : 'accepted', customerConnection, randomUUID()],
+    );
+    await db.query(
+      'insert into conversations(id,agency_id,connection_id,contact_phone,name,analysis,last_inbound_at,last_message_at) values($1,$2,$3,$4,$5,$6,now(),now())',
+      [
+        randomUUID(),
+        i === 4 ? otherBusiness : business,
+        customerConnection,
+        customerPhone,
+        'Test customer ' + i,
+        c.analysis,
+      ],
+    );
+  }
+  const foreignOffer = randomUUID();
+  offerIds.push(foreignOffer);
+  await db.query(
+    "insert into campaigns(id,agency_id,created_by,title,offer_text,locale,status) values($1,$2,$3,'Other offer','Private business offer','en','cancelled')",
+    [foreignOffer, otherBusiness, user.id],
+  );
   assert.equal(
     (await approvedTemplates(number, 'mock-token')).length,
     1,
     'Only approved simple marketing templates are offered',
   );
-  const first = await newOffer(owner);
+  const first = await newOffer(businessOwner);
   await matchCampaign(first);
   assert.equal((await row('campaigns', first)).status, 'ready');
   assert.ok(candidateIds.includes(people[0]));
   assert.ok(!candidateIds.includes(people[1]));
   assert.ok(!candidateIds.includes(people[2]));
   assert.ok(!candidateIds.includes(people[3]));
+  assert.ok(!candidateIds.includes(people[4]), 'Other business contacts never enter this audience');
+  assert.ok(!candidateIds.includes(people[5]), 'Pending consent never enters this audience');
   await prepareTemplate(first, template.id);
   assert.equal((await row('campaigns', first)).status, 'matching');
   await matchCampaign(first);
@@ -423,15 +501,80 @@ try {
     template.components[0].text,
     'Match actual approved message, not just submitted offer',
   );
-  assert.equal((await listCampaigns([business], false))[0].recipients, undefined);
-  assert.equal((await listCampaigns([business], false))[0].analysis, null);
+  const scoped = (await listCampaigns([business], false)).find((offer) => offer.id === first)!;
+  assert.deepEqual(
+    scoped.recipients?.map((person) => person.phone),
+    [phone],
+  );
+  assert.ok(scoped.analysis);
+  assert.ok(
+    !scoped.recipients?.some((person) =>
+      person.interests.includes('Other business private interest'),
+    ),
+  );
   assert.deepEqual(await listCampaigns([], false), []);
   assert.equal(
     (await request(`/api/campaigns/${first}`, 'POST', { action: 'send' }, viewer)).status,
     403,
   );
-  const privateList = await request('/api/campaigns', 'GET', undefined, viewer);
-  assert.ok(!JSON.stringify(privateList.data).includes(phone));
+  assert.equal(
+    (await request(`/api/campaigns/setup?campaignId=${first}`, 'GET', undefined, viewer)).status,
+    403,
+  );
+  assert.equal(
+    (await request(`/api/campaigns/${foreignOffer}`, 'POST', { action: 'cancel' }, businessOwner))
+      .status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(
+        `/api/campaigns/setup?campaignId=${foreignOffer}`,
+        'GET',
+        undefined,
+        businessOwner,
+      )
+    ).status,
+    403,
+  );
+  const privateList = await request('/api/campaigns', 'GET', undefined, businessOwner);
+  assert.ok(privateList.data.campaigns.some((offer: { id: string }) => offer.id === first));
+  assert.ok(!privateList.data.campaigns.some((offer: { id: string }) => offer.id === foreignOffer));
+  assert.ok(!JSON.stringify(privateList.data).includes(phone + '4'));
+  const visibleOwn = privateList.data.campaigns.find((offer: { id: string }) => offer.id === first);
+  assert.equal(
+    visibleOwn.recipients[0].phone,
+    phone,
+    'Business owners can see their own customer contacts',
+  );
+  assert.equal(
+    (
+      await request(
+        `/api/campaigns/${first}`,
+        'POST',
+        {
+          action: 'network',
+          enabled: true,
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+        businessOwner,
+      )
+    ).status,
+    200,
+  );
+  assert.equal((await row('campaigns', first)).network_enabled, true);
+  assert.equal(
+    (
+      await request(
+        `/api/campaigns/${first}`,
+        'POST',
+        { action: 'network', enabled: false },
+        businessOwner,
+      )
+    ).status,
+    200,
+  );
+  assert.equal((await row('campaigns', first)).network_enabled, false);
   await db.query('update shared_profiles set updated_at=now() where id=$1', [people[0]]);
   await assert.rejects(launchCampaign(first), { code: 'audienceChanged' });
   assert.equal((await row('campaigns', first)).status, 'matching');
@@ -509,17 +652,19 @@ try {
   assert.equal((await row('campaigns', invalid)).error, 'analysisInvalid');
   invalidMatch = false;
   await cancelCampaign(invalid);
-  await webhook('Please stop promotional messages.');
-  assert.equal((await row('shared_profiles', people[0])).offer_hold, true);
-  stopOffers = true;
-  await runAnalysis();
+  await webhook('DELETE MY DATA');
   assert.equal(
     await row('shared_profiles', people[0]),
     undefined,
-    'AI withdrawal removes the profile',
+    'Global withdrawal removes the profile',
   );
-  assert.equal(await row('conversations', thread), undefined, 'AI withdrawal removes chats');
-  stopOffers = false;
+  assert.equal(await row('conversations', thread), undefined, 'Global withdrawal removes chats');
+  assert.equal(
+    (await db.query('select id from recommendation_jobs where profile_id=$1', [people[0]]))
+      .rowCount,
+    0,
+    'Global withdrawal removes recommendation jobs',
+  );
   await webhook('Thanks for your help with the oak desk.');
   assert.equal(
     (await db.query('select status from customer_consents where phone=$1', [phone])).rows[0].status,
@@ -555,7 +700,7 @@ try {
   assert.equal((await row('campaign_recipients', rid)).status, 'uncertain');
   assert.equal(sendCount, 2);
   console.log(
-    'PASS: automatic analysis, open categories/facts, evidence, dedupe/cache, manual overrides, source races, retries/recovery, campaign roles/privacy, actual-template matching, consent/language suppression, profile changes, delivery dedupe/callbacks/uncertainty, cancellation, AI opt-out and offline STOP. All provider calls mocked.',
+    'PASS: automatic analysis, open categories/facts, evidence, dedupe/cache, manual overrides, source races, retries/recovery, campaign roles/privacy, actual-template matching, consent/language suppression, profile changes, delivery dedupe/callbacks/uncertainty, cancellation, global deletion and offline STOP. All provider calls mocked.',
   );
 } finally {
   globalThis.fetch = originalFetch;
@@ -563,18 +708,50 @@ try {
   else process.env.OPENROUTER_API_KEY = originalKey;
   if (originalModel === undefined) delete process.env.OPENROUTER_MODEL;
   else process.env.OPENROUTER_MODEL = originalModel;
+  const cleanupProfiles = [
+    ...new Set([
+      ...people,
+      ...(
+        await db.query('select id from shared_profiles where phone=any($1::text[])', [
+          people.map((_, i) => (i ? phone + String(i) : phone)),
+        ])
+      ).rows.map((profile) => profile.id as string),
+    ]),
+  ];
+  await db.query(
+    'delete from recommendation_jobs where profile_id=any($1::text[]) or conversation_id in (select id from conversations where connection_id=any($2::text[]))',
+    [cleanupProfiles, [connection, otherConnection]],
+  );
   await db.query('delete from campaign_recipients where campaign_id=any($1::text[])', [offerIds]);
   await db.query('delete from campaigns where id=any($1::text[])', [offerIds]);
-  await db.query('delete from profile_events where profile_id=any($1::text[])', [people]);
-  await db.query('delete from shared_profiles where id=any($1::text[])', [people]);
-  await db.query('delete from messages where connection_id=$1', [connection]);
-  await db.query('delete from provider_events where connection_id=$1', [connection]);
-  await db.query('delete from conversations where connection_id=$1', [connection]);
-  await db.query('delete from customer_consents where reply_connection_id=$1', [connection]);
-  await db.query('delete from whatsapp_connections where id=$1', [connection]);
-  await db.query('delete from invitations where agency_id=$1', [business]);
-  await db.query('delete from audit_events where agency_id=$1', [business]);
-  await db.query('delete from agencies where id=$1', [business]);
-  await db.query('delete from users where email=$1', [userEmail]);
+  await db.query('delete from profile_events where profile_id=any($1::text[])', [cleanupProfiles]);
+  await db.query('delete from shared_profiles where id=any($1::text[])', [cleanupProfiles]);
+  await db.query(
+    'delete from enrollment_links where conversation_id in (select id from conversations where connection_id=any($1::text[]))',
+    [[connection, otherConnection]],
+  );
+  await db.query('delete from messages where connection_id=any($1::text[])', [
+    [connection, otherConnection],
+  ]);
+  await db.query('delete from provider_events where connection_id=any($1::text[])', [
+    [connection, otherConnection],
+  ]);
+  await db.query('delete from conversations where connection_id=any($1::text[])', [
+    [connection, otherConnection],
+  ]);
+  await db.query('delete from customer_consents where reply_connection_id=any($1::text[])', [
+    [connection, otherConnection],
+  ]);
+  await db.query('delete from whatsapp_connections where id=any($1::text[])', [
+    [connection, otherConnection],
+  ]);
+  await db.query('delete from invitations where agency_id=any($1::text[])', [
+    [business, otherBusiness],
+  ]);
+  await db.query('delete from audit_events where agency_id=any($1::text[])', [
+    [business, otherBusiness],
+  ]);
+  await db.query('delete from agencies where id=any($1::text[])', [[business, otherBusiness]]);
+  await db.query('delete from users where email=any($1::text[])', [[userEmail, ownerEmail]]);
   await db.end();
 }

@@ -63,12 +63,16 @@ export async function loadWorkspace(
       locale: agencies.locale,
       industry: agencies.industry,
       categories: agencies.categories,
-      role: memberships.role,
+      role:
+        current.platformRole === 'admin' ? sql<string>`'admin'` : sql<string>`${memberships.role}`,
       createdAt: agencies.createdAt,
     })
-    .from(memberships)
-    .innerJoin(agencies, eq(agencies.id, memberships.agencyId))
-    .where(eq(memberships.userId, current.id));
+    .from(agencies)
+    .leftJoin(
+      memberships,
+      and(eq(agencies.id, memberships.agencyId), eq(memberships.userId, current.id)),
+    )
+    .where(current.platformRole === 'admin' ? undefined : eq(memberships.userId, current.id));
   const ids = agencyRows.map((a) => a.id);
   const own = {
     name: current.name,

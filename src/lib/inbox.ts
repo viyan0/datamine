@@ -1,12 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { connections, conversations, messages, customerConsents } from '@/db/schema';
+import {
+  connections,
+  conversations,
+  messages,
+  customerConsents,
+  sharedProfiles,
+  campaignRecipients,
+  recommendationJobs,
+} from '@/db/schema';
 import { HttpError } from './access';
 import { decrypt } from './security';
 import { sendMetaText } from './meta';
 import { replyWindowOpen, type Conversation, type InboxMessage } from './inbox-types';
 import { analysisVersion } from './analysis-types';
+import { refreshOfferAudiences } from './consent';
 
 export async function getConversation(agencyId: string, id: string) {
   const [row] = await getDb()
@@ -15,6 +24,90 @@ export async function getConversation(agencyId: string, id: string) {
     .where(and(eq(conversations.id, id), eq(conversations.agencyId, agencyId)));
   if (!row) throw new HttpError(404, 'notFound');
   return row;
+}
+
+type CustomerDetails = Partial<
+  Pick<
+    typeof conversations.$inferSelect,
+    'name' | 'service' | 'destination' | 'inquiryStatus' | 'note'
+  >
+>;
+export async function updateConversationDetails(
+  agencyId: string,
+  id: string,
+  fields: CustomerDetails | { automatic: true },
+) {
+  const original = await getConversation(agencyId, id);
+  return getDb().transaction(async (tx) => {
+    // Serialize preference edits with opt-out and delivery before changing the chat.
+    await tx
+      .select({ phone: customerConsents.phone })
+      .from(customerConsents)
+      .where(eq(customerConsents.phone, original.contactPhone))
+      .for('update');
+    const [profile] = await tx
+      .select()
+      .from(sharedProfiles)
+      .where(eq(sharedProfiles.phone, original.contactPhone))
+      .for('update');
+    const [current] = await tx
+      .select()
+      .from(conversations)
+      .where(and(eq(conversations.id, id), eq(conversations.agencyId, agencyId)))
+      .for('update');
+    if (!current) throw new HttpError(404, 'notFound');
+    const automatic = 'automatic' in fields;
+    const changed = automatic
+      ? []
+      : (['service', 'destination', 'inquiryStatus'] as const).filter(
+          (field) => fields[field] !== undefined && current[field] !== fields[field],
+        );
+    await tx
+      .update(conversations)
+      .set(
+        automatic
+          ? {
+              manualFields: [],
+              analysis: null,
+              analysisStatus: 'pending',
+              analysisDueAt: new Date(),
+              analysisAttempts: 0,
+              analysisRevision: sql`${conversations.analysisRevision} + 1`,
+            }
+          : { ...fields, manualFields: [...new Set([...current.manualFields, ...changed])] },
+      )
+      .where(eq(conversations.id, id));
+    if (!automatic && !changed.length) return false;
+    if (profile) {
+      await tx
+        .update(sharedProfiles)
+        .set({
+          updatedAt: sql`greatest(now(), ${sharedProfiles.updatedAt} + interval '1 millisecond')`,
+          ...(automatic ? { offerHold: true } : {}),
+        })
+        .where(eq(sharedProfiles.id, profile.id));
+      await tx
+        .update(campaignRecipients)
+        .set({ status: 'cancelled' })
+        .where(
+          and(
+            eq(campaignRecipients.profileId, profile.id),
+            inArray(campaignRecipients.status, ['matched', 'queued']),
+          ),
+        );
+      await tx
+        .update(recommendationJobs)
+        .set({ status: 'cancelled', dueAt: null, runId: null })
+        .where(
+          and(
+            eq(recommendationJobs.profileId, profile.id),
+            inArray(recommendationJobs.status, ['pending', 'processing', 'queued', 'error']),
+          ),
+        );
+      await refreshOfferAudiences(tx, [profile.language]);
+    }
+    return true;
+  });
 }
 
 export async function listConversations(agencyId: string): Promise<Conversation[]> {

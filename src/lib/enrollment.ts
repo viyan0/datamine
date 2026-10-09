@@ -9,6 +9,7 @@ import {
   sharedProfiles,
   profileEvents,
   customerConsents,
+  memberships,
 } from '@/db/schema';
 import { HttpError } from './access';
 import { appUrl, requiredSecret } from './config';
@@ -23,6 +24,7 @@ import {
 } from './enrollment-types';
 import { sendMetaText } from './meta';
 import { clearCustomerData, refreshOfferAudiences } from './consent';
+import { analysisVersion } from './analysis-types';
 
 export const customerCookie = 'datamine-customer';
 const lifetime = 30 * 60 * 1000;
@@ -322,8 +324,70 @@ export async function optOutCustomer(phone: string, locale: string) {
   });
   return customerProfile(phone);
 }
-export async function listSharedProfiles() {
-  return (await getDb().select().from(sharedProfiles).orderBy(desc(sharedProfiles.updatedAt))).map(
-    serialize,
-  );
+export async function listSharedProfiles(current: {
+  id: string;
+  platformRole?: string;
+}): Promise<SharedProfile[]> {
+  if (current.platformRole === 'admin')
+    return (
+      await getDb().select().from(sharedProfiles).orderBy(desc(sharedProfiles.updatedAt))
+    ).map(serialize);
+
+  // A business sees its own CRM knowledge, not interests learned by another business.
+  const rows = await getDb()
+    .select({
+      id: conversations.id,
+      name: conversations.name,
+      phone: conversations.contactPhone,
+      analysis: conversations.analysis,
+      locale: agencies.locale,
+      updatedAt: conversations.lastMessageAt,
+      consentAt: customerConsents.decisionAt,
+      noticeAt: customerConsents.noticeAt,
+      createdAt: conversations.createdAt,
+    })
+    .from(conversations)
+    .innerJoin(
+      memberships,
+      and(eq(memberships.agencyId, conversations.agencyId), eq(memberships.userId, current.id)),
+    )
+    .innerJoin(agencies, eq(agencies.id, conversations.agencyId))
+    .innerJoin(
+      customerConsents,
+      and(
+        eq(customerConsents.phone, conversations.contactPhone),
+        eq(customerConsents.status, 'accepted'),
+      ),
+    )
+    .orderBy(desc(conversations.lastMessageAt));
+  const profiles = new Map<string, SharedProfile>();
+  for (const row of rows) {
+    const result = row.analysis?.version === analysisVersion ? row.analysis.result : null;
+    const interests = result
+      ? [...result.services, ...(result.subject ? [result.subject.value] : [])]
+      : [];
+    const existing = profiles.get(row.phone);
+    if (existing) {
+      existing.interests = [...new Set([...existing.interests, ...interests])].slice(0, 12);
+      continue;
+    }
+    const language =
+      result?.language && ['en', 'ar', 'ckb'].includes(result.language)
+        ? result.language
+        : ['en', 'ar', 'ckb'].includes(row.locale)
+          ? row.locale
+          : 'en';
+    profiles.set(row.phone, {
+      id: row.id,
+      name: row.name,
+      phone: row.phone,
+      language: language as SharedProfile['language'],
+      destination: result?.subject?.value || '',
+      interests: [...new Set(interests)].slice(0, 12),
+      status: 'active',
+      consentAt: (row.consentAt || row.noticeAt || row.createdAt).toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    });
+  }
+  return [...profiles.values()];
 }

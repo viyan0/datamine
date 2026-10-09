@@ -74,14 +74,18 @@ export function Dashboard({
     router = useRouter();
   const [menu, setMenu] = useState(false),
     [form, setForm] = useState<FormKind | null>(null),
+    [formAgencyId, setFormAgencyId] = useState<string>(),
     [query, setQuery] = useState(''),
     [notice, setNotice] = useState('');
   const root = `/${locale}/${demo ? 'demo' : 'app'}`;
   const manage = data.agencies.some((a) => ['owner', 'admin'].includes(a.role));
   const totalPeople = new Set(data.members.map((m) => m.email)).size;
-  function open(kind: FormKind) {
+  function open(kind: FormKind, agencyId?: string) {
     if (demo) setNotice(t('demoReadOnly'));
-    else setForm(kind);
+    else {
+      setFormAgencyId(agencyId);
+      setForm(kind);
+    }
   }
   function date(value: string) {
     return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(
@@ -98,6 +102,7 @@ export function Dashboard({
               <th>{t('language')}</th>
               <th>{t('members')}</th>
               <th>{t('status')}</th>
+              {section === 'agencies' && data.user.platformAdmin && <th>{t('businessLogin')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -132,6 +137,14 @@ export function Dashboard({
                       {t(count ? 'active' : 'needsSetup')}
                     </span>
                   </td>
+                  {section === 'agencies' && data.user.platformAdmin && (
+                    <td>
+                      <Button variant="outline" onClick={() => open('business-access', a.id)}>
+                        <LockKeyhole size={14} />
+                        {t('businessLogin')}
+                      </Button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -163,23 +176,21 @@ export function Dashboard({
           </button>
         </div>
         <nav aria-label={t('workspace')}>
-          {nav
-            .filter((item) => item.key !== 'customers' || data.user.platformAdmin)
-            .map(({ key, icon: Icon }) => (
-              <Link
-                key={key}
-                href={`${root}${key === 'overview' ? '' : `/${key}`}`}
-                className={`nav-item ${section === key ? 'selected' : ''}`}
-                aria-current={section === key ? 'page' : undefined}
-                onClick={() => setMenu(false)}
-              >
-                <span className="nav-icon">
-                  <Icon size={18} />
-                </span>
-                <span>{t(key)}</span>
-                {key === 'agencies' && <span className="nav-count">{data.agencies.length}</span>}
-              </Link>
-            ))}
+          {nav.map(({ key, icon: Icon }) => (
+            <Link
+              key={key}
+              href={`${root}${key === 'overview' ? '' : `/${key}`}`}
+              className={`nav-item ${section === key ? 'selected' : ''}`}
+              aria-current={section === key ? 'page' : undefined}
+              onClick={() => setMenu(false)}
+            >
+              <span className="nav-icon">
+                <Icon size={18} />
+              </span>
+              <span>{t(key)}</span>
+              {key === 'agencies' && <span className="nav-count">{data.agencies.length}</span>}
+            </Link>
+          ))}
         </nav>
         <div className="sidebar-bottom">
           <div className="user-card">
@@ -279,7 +290,7 @@ export function Dashboard({
             </div>
           )}
           {section === 'campaigns' && <Campaigns data={data} demo={demo} />}
-          {section === 'customers' && data.user.platformAdmin && <CustomerDirectory demo={demo} />}
+          {section === 'customers' && <CustomerDirectory demo={demo} />}
           {section === 'inbox' && <AgencyInbox data={data} demo={demo} />}
           {section === 'overview' && (
             <>
@@ -452,7 +463,14 @@ export function Dashboard({
           )}
         </main>
       </div>
-      {form && <WorkspaceForm kind={form} data={data} close={() => setForm(null)} />}
+      {form && (
+        <WorkspaceForm
+          kind={form}
+          data={data}
+          agencyId={formAgencyId}
+          close={() => setForm(null)}
+        />
+      )}
     </div>
   );
 }

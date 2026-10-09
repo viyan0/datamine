@@ -251,6 +251,7 @@ export const sharedProfiles = pgTable('shared_profiles', {
   language: text('language').notNull(),
   destination: text('destination').default('').notNull(),
   interests: jsonb('interests').$type<string[]>().notNull().default([]),
+  blockedTopics: jsonb('blocked_topics').$type<string[]>().notNull().default([]),
   status: text('status').default('active').notNull(),
   offerHold: boolean('offer_hold').default(false).notNull(),
   automaticInterests: boolean('automatic_interests').default(false).notNull(),
@@ -297,6 +298,8 @@ export const campaigns = pgTable('campaigns', {
     .references(() => user.id),
   title: text('title').notNull(),
   offerText: text('offer_text').notNull(),
+  networkEnabled: boolean('network_enabled').default(false).notNull(),
+  networkExpiresAt: timestamp('network_expires_at', { withTimezone: true }),
   locale: text('locale').notNull(),
   status: text('status').default('matching').notNull(),
   senderId: text('sender_id').references(() => connections.id),
@@ -332,4 +335,42 @@ export const campaignRecipients = pgTable(
     submittedAt: timestamp('submitted_at', { withTimezone: true }),
   },
   (t) => [uniqueIndex('campaign_recipient_unique').on(t.campaignId, t.profileId)],
+);
+
+// Each customer message can request at most one automatic recommendation.
+export const recommendationJobs = pgTable(
+  'recommendation_jobs',
+  {
+    id: text('id').primaryKey(),
+    profileId: text('profile_id')
+      .notNull()
+      .references(() => sharedProfiles.id),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id),
+    triggerMessageId: text('trigger_message_id')
+      .notNull()
+      .unique()
+      .references(() => messages.id),
+    mode: text('mode').$type<'interest' | 'more' | 'stop'>().notNull(),
+    status: text('status').default('pending').notNull(),
+    sourceRevision: integer('source_revision').notNull(),
+    profileUpdatedAt: timestamp('profile_updated_at', { withTimezone: true }).notNull(),
+    sourceHash: text('source_hash'),
+    topic: text('topic'),
+    campaignId: text('campaign_id').references(() => campaigns.id),
+    campaignHash: text('campaign_hash'),
+    reason: text('reason'),
+    body: text('body'),
+    messageId: text('message_id').references(() => messages.id),
+    dueAt: timestamp('due_at', { withTimezone: true }).defaultNow(),
+    runId: text('run_id'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    attempts: integer('attempts').default(0).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('recommendation_due_idx').on(t.status, t.dueAt),
+    index('recommendation_profile_idx').on(t.profileId),
+  ],
 );

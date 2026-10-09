@@ -6,15 +6,17 @@ import { Copy, ShieldCheck } from 'lucide-react';
 import type { WorkspaceData } from '@/lib/workspace';
 import { Button } from './ui/button';
 import { Dialog } from './dialog';
-export type FormKind = 'agency' | 'invite' | 'connection';
+export type FormKind = 'agency' | 'invite' | 'business-access' | 'connection';
 export function WorkspaceForm({
   kind,
   data,
   close,
+  agencyId,
 }: {
   kind: FormKind;
   data: WorkspaceData;
   close: () => void;
+  agencyId?: string;
 }) {
   const t = useTranslations(),
     locale = useLocale(),
@@ -23,8 +25,15 @@ export function WorkspaceForm({
     [error, setError] = useState(''),
     [inviteUrl, setInviteUrl] = useState(''),
     [copied, setCopied] = useState(false);
+  const invitation = kind === 'invite' || kind === 'business-access';
   const title = t(
-    kind === 'agency' ? 'createAgency' : kind === 'invite' ? 'inviteMember' : 'connectNumber',
+    kind === 'agency'
+      ? 'createAgency'
+      : kind === 'business-access'
+        ? 'businessLogin'
+        : kind === 'invite'
+          ? 'inviteMember'
+          : 'connectNumber',
   );
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -33,13 +42,13 @@ export function WorkspaceForm({
     try {
       const payload = Object.fromEntries(new FormData(e.currentTarget));
       const response = await fetch(
-        `/api/${kind === 'agency' ? 'agencies' : kind === 'invite' ? 'invitations' : 'connections'}`,
+        `/api/${kind === 'agency' ? 'agencies' : invitation ? 'invitations' : 'connections'}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...payload,
-            ...(kind === 'invite' ? { locale } : {}),
+            ...(invitation ? { locale } : {}),
             ...(kind === 'agency'
               ? {
                   categories: String(payload.categories)
@@ -95,19 +104,26 @@ export function WorkspaceForm({
         </div>
       ) : (
         <form className="modal-body" onSubmit={submit}>
-          {kind !== 'agency' && (
-            <label>
-              {t('agency')}
-              <select name="agencyId" required>
-                {data.agencies
-                  .filter((a) => ['owner', 'admin'].includes(a.role))
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
+          {kind === 'business-access' && agencyId ? (
+            <>
+              <p>{data.agencies.find((a) => a.id === agencyId)?.name}</p>
+              <input type="hidden" name="agencyId" value={agencyId} />
+            </>
+          ) : (
+            kind !== 'agency' && (
+              <label>
+                {t('agency')}
+                <select name="agencyId" required>
+                  {data.agencies
+                    .filter((a) => ['owner', 'admin'].includes(a.role))
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            )
           )}
           {kind === 'agency' && (
             <>
@@ -150,21 +166,27 @@ export function WorkspaceForm({
               </label>
             </>
           )}
-          {kind === 'invite' && (
+          {invitation && (
             <>
               <label>
                 {t('email')}
                 <input type="email" name="email" required maxLength={254} />
               </label>
-              <label>
-                {t('role')}
-                <select name="role">
-                  <option value="agent">{t('agent')}</option>
-                  <option value="admin">{t('admin')}</option>
-                  <option value="viewer">{t('viewer')}</option>
-                </select>
-              </label>
-              <p className="form-hint">{t('inviteHelp')}</p>
+              {kind === 'business-access' ? (
+                <input type="hidden" name="role" value="owner" />
+              ) : (
+                <label>
+                  {t('role')}
+                  <select name="role">
+                    <option value="agent">{t('agent')}</option>
+                    <option value="admin">{t('admin')}</option>
+                    <option value="viewer">{t('viewer')}</option>
+                  </select>
+                </label>
+              )}
+              <p className="form-hint">
+                {t(kind === 'business-access' ? 'businessLoginHelp' : 'inviteHelp')}
+              </p>
             </>
           )}
           {kind === 'connection' && (
@@ -236,7 +258,7 @@ export function WorkspaceForm({
                 : t(
                     kind === 'agency'
                       ? 'createAgency'
-                      : kind === 'invite'
+                      : invitation
                         ? 'createInvite'
                         : 'verifyConnect',
                   )}

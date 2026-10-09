@@ -71,7 +71,7 @@ test('dashboard aggregates only member businesses and excludes failed, old and f
       id: 'viewer',
       name: 'Viewer',
       email: 'viewer@example.com',
-      platformRole: 'admin',
+      platformRole: 'staff',
     };
     const workspace = await loadWorkspace(viewer, true);
     assert.equal(workspace.agencies.length, 1);

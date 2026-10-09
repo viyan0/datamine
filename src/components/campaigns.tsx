@@ -22,6 +22,56 @@ async function api(path: string, body?: unknown) {
   if (!r.ok) throw new Error(data.error);
   return data;
 }
+function offerDate(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
+function publicationInput(form: FormData) {
+  const enabled = form.get('networkEnabled') === 'on';
+  const date = String(form.get('networkExpiresAt') || '');
+  return {
+    networkEnabled: enabled,
+    networkExpiresAt: enabled && date ? new Date(`${date}T23:59:59`).toISOString() : null,
+  };
+}
+function NetworkFields({ campaign, disabled }: { campaign?: CampaignView; disabled: boolean }) {
+  const t = useTranslations('offers');
+  const [enabled, setEnabled] = useState(campaign?.networkEnabled || false);
+  const [openedAt] = useState(() => Date.now());
+  return (
+    <>
+      <div className="consent-box">
+        <label>
+          <input
+            type="checkbox"
+            name="networkEnabled"
+            checked={enabled}
+            disabled={disabled}
+            onChange={(event) => setEnabled(event.target.checked)}
+          />
+          <span>{t('networkPublish')}</span>
+        </label>
+      </div>
+      {enabled && (
+        <label>
+          {t('networkUntil')}
+          <input
+            type="date"
+            name="networkExpiresAt"
+            required
+            disabled={disabled}
+            min={offerDate(new Date(openedAt))}
+            max={offerDate(new Date(openedAt + 89 * 86400000))}
+            defaultValue={
+              campaign?.networkExpiresAt
+                ? offerDate(new Date(campaign.networkExpiresAt))
+                : offerDate(new Date(openedAt + 7 * 86400000))
+            }
+          />
+        </label>
+      )}
+    </>
+  );
+}
 export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }) {
   const t = useTranslations('offers'),
     errors = useTranslations('errors'),
@@ -35,11 +85,17 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
   const [setup, setSetup] = useState<{
     sender: { id: string; label: string; displayPhone: string } | null;
     templates: ManagedTemplate[];
-  }>({ sender: null, templates: [] });
-  const [senderId, setSenderId] = useState(data.connections[0]?.id || ''),
-    [setupError, setSetupError] = useState('');
+    campaignId: string;
+  }>({ sender: null, templates: [], campaignId: '' });
+  const [setupError, setSetupError] = useState('');
   const admin = data.user.platformAdmin,
-    canCreate = data.agencies.some((a) => ['owner', 'admin', 'agent'].includes(a.role));
+    canCreate = admin || data.agencies.some((a) => ['owner', 'admin'].includes(a.role));
+  const current = items.find((c) => c.id === selected) || items[0];
+  const currentId = current?.id;
+  const canManage =
+    admin ||
+    data.agencies.some((a) => a.id === current?.agencyId && ['owner', 'admin'].includes(a.role));
+  const currentSetup = setup.campaignId === currentId ? setup : { sender: null, templates: [] };
   useEffect(() => {
     if (demo) return;
     let active = true,
@@ -69,16 +125,16 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
     };
   }, [demo]);
   useEffect(() => {
-    if (demo || !admin) return;
+    if (demo || !canManage || !currentId) return;
     let active = true,
       running = false;
     const load = async () => {
       if (running) return;
       running = true;
       try {
-        const s = await api('/api/campaigns/setup');
+        const s = await api(`/api/campaigns/setup?campaignId=${encodeURIComponent(currentId)}`);
         if (active) {
-          setSetup(s);
+          setSetup({ ...s, campaignId: currentId });
           setSetupError('');
         }
       } catch (e) {
@@ -95,11 +151,10 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
       active = false;
       clearInterval(timer);
     };
-  }, [demo, admin]);
-  const current = items.find((c) => c.id === selected) || items[0];
+  }, [demo, canManage, currentId]);
   const approved =
     !!current?.template &&
-    setup.templates.some(
+    currentSetup.templates.some(
       (template) => template.id === current.template?.id && template.status === 'APPROVED',
     );
   const replyCount =
@@ -148,7 +203,14 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
     e.preventDefault();
     setBusy(true);
     setError('');
-    const input = Object.fromEntries(new FormData(e.currentTarget));
+    const form = new FormData(e.currentTarget);
+    const input = {
+      agencyId: String(form.get('agencyId') || ''),
+      title: String(form.get('title') || ''),
+      offerText: String(form.get('offerText') || ''),
+      locale: String(form.get('locale') || ''),
+      ...publicationInput(form),
+    };
     try {
       if (demo) {
         const id = crypto.randomUUID();
@@ -195,52 +257,6 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
           </Button>
         )}
       </div>
-      {admin && !demo && (
-        <details className="panel campaign-setup">
-          <summary>
-            <MessageCircle size={16} />
-            {t('senderSetup')}
-            {setup.sender && (
-              <span>
-                {' '}
-                · {setup.sender.label} · {setup.sender.displayPhone}
-              </span>
-            )}
-          </summary>
-          <p>{t('senderHint')}</p>
-          <div className="campaign-controls">
-            <select
-              aria-label={t('sender')}
-              value={senderId}
-              onChange={(e) => setSenderId(e.target.value)}
-            >
-              {data.connections.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.agencyName} · {c.label}
-                </option>
-              ))}
-            </select>
-            <Button
-              variant="outline"
-              disabled={!senderId || busy}
-              onClick={async () => {
-                setBusy(true);
-                setSetupError('');
-                try {
-                  await api('/api/campaigns/setup', { id: senderId });
-                  setSetup(await api('/api/campaigns/setup'));
-                } catch (e) {
-                  setSetupError(e instanceof Error ? e.message : 'serverError');
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {t('useSender')}
-            </Button>
-          </div>
-        </details>
-      )}
       {error && (
         <p className="form-error" role="alert">
           {errors.has(error) ? errors(error) : errors('serverError')}
@@ -293,7 +309,34 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
                 {current.offerText}
               </p>
               {current.status === 'demoDraft' && <p className="notice">{t('demoDraftHint')}</p>}
-              {admin && (
+              {canManage && !demo && current.status !== 'cancelled' && (
+                <details className="offer-template-tools">
+                  <summary>{t('networkPublish')}</summary>
+                  <form
+                    className="modal-body"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const input = publicationInput(new FormData(event.currentTarget));
+                      void action({
+                        action: 'network',
+                        enabled: input.networkEnabled,
+                        expiresAt: input.networkExpiresAt,
+                      });
+                    }}
+                  >
+                    <NetworkFields
+                      key={`${current.id}:${current.networkEnabled}:${current.networkExpiresAt}`}
+                      campaign={current}
+                      disabled={busy}
+                    />
+                    <p className="form-hint">{t('networkHint')}</p>
+                    <Button variant="outline" disabled={busy}>
+                      {t('networkSave')}
+                    </Button>
+                  </form>
+                </details>
+              )}
+              {canManage && (
                 <>
                   {!demo && !['sending', 'complete', 'cancelled'].includes(current.status) && (
                     <>
@@ -322,17 +365,19 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
                         <OfferTemplate
                           key={current.id}
                           campaign={current}
-                          templates={setup.templates}
+                          templates={currentSetup.templates}
                           disabled={busy}
-                          connected={!!setup.sender && !setupError}
+                          connected={!!currentSetup.sender && !setupError}
                           onSelect={(templateId) => void action({ action: 'template', templateId })}
                           onCreated={async () => {
                             const [result, s] = await Promise.all([
                               api('/api/campaigns'),
-                              api('/api/campaigns/setup'),
+                              api(
+                                `/api/campaigns/setup?campaignId=${encodeURIComponent(current.id)}`,
+                              ),
                             ]);
                             setItems(result.campaigns);
-                            setSetup(s);
+                            setSetup({ ...s, campaignId: current.id });
                             setSetupError('');
                           }}
                         />
@@ -429,7 +474,6 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
                   </div>
                 </>
               )}
-              {!admin && <p className="notice">{t('reviewHint')}</p>}
             </div>
           </section>
         )}
@@ -442,7 +486,7 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
               {t('business')}
               <select name="agencyId">
                 {data.agencies
-                  .filter((a) => ['owner', 'admin', 'agent'].includes(a.role))
+                  .filter((a) => admin || ['owner', 'admin'].includes(a.role))
                   .map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
@@ -466,6 +510,7 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
                 <option value="ckb">کوردی</option>
               </select>
             </label>
+            {!demo && <NetworkFields disabled={busy} />}
             {error && (
               <p role="alert" className="form-error">
                 {errors.has(error) ? errors(error) : errors('serverError')}

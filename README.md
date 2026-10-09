@@ -1,13 +1,13 @@
-# Datamine · Phase 5 demo
+# Datamine demo
 
-A multilingual business demo built with Next.js, TypeScript, PostgreSQL, Drizzle, Better Auth, and next-intl. Phase 5 adds automatic AI insights and offer matching. Shops, salons, clinics, travel companies, and other businesses share the same simple inbox and customer workflow, with categories chosen from each conversation.
+A multilingual business demo built with Next.js, TypeScript, PostgreSQL, Drizzle, Better Auth, and next-intl. It combines business CRM, consented customer insights, manual campaigns, and automatic offer recommendations. Shops, salons, clinics, travel companies, and other businesses share the same simple inbox and customer workflow, with categories chosen from each conversation.
 
 ## Available in the demo
 
 - Staff login with closed public registration, database-backed rate limits, and password changes.
-- Business creation and explicit memberships. Even the platform owner needs a business membership to read its private data.
+- One central administrator can view and manage every business, its inboxes, customers, and offers. Business accounts see only their own CRM data.
 - A business type and up to 12 optional category hints, editable by owners/admins in Settings. Haiku chooses its own labels; changing context schedules fresh analysis. Hints can be written in any language.
-- Administrator, agent, and viewer roles; single-use, 48-hour invitations. Invitations are copied and shared manually; the app does not send email.
+- Business owners are invited from **Businesses** with single-use, 48-hour links. There is no Team sidebar. Invitations are copied and shared manually; the app does not send email.
 - English, Arabic, and Sorani interfaces, including right-to-left layouts. Translations should receive native-speaker review before the live pilot.
 - Meta account/phone verification, encrypted API credentials, signature verification, account-aware inbound routing, durable messages/events, and duplicate suppression.
 - Incoming-message inspection for authorized staff, including explicit labels for unsupported media.
@@ -17,15 +17,15 @@ A multilingual business demo built with Next.js, TypeScript, PostgreSQL, Drizzle
 - An **interactive sample inbox** at `/en/demo/inbox`, `/ar/demo/inbox`, and `/ckb/demo/inbox`. Replies are simulated and edits reset on leaving the inbox; sample records never reach Meta or the database.
 - Automatic analysis and campaign processing use Vercel Queues when deployed on Vercel, or a companion process locally/on Render. An optional pg-boss worker handles connection health.
 
-Offers now have automatic audience matching and simple approved-template delivery. Assignments, reminders, multiple inquiries per customer, media previews, and automatic replies remain outside this demo.
+Manual bulk campaigns and automatic recommendations are separate flows. Assignments, reminders, multiple inquiries per customer, media previews, and general customer-service chatbots remain outside this demo.
 
 ## Customer opt-in
 
 The first incoming WhatsApp message queues one consent notice. A single explicit YES (also Arabic/Sorani equivalents) covers message collection, AI analysis and promotional enrollment. Silence stays pending: messages are held without AI analysis or promotional matching. NO deletes the held chat; STOP withdraws later. A minimal phone/choice record prevents further collection after withdrawal. Replayed webhooks cannot send duplicate notices or silently reverse a choice.
 
-After YES, Haiku analyses the held messages, creates the shared customer profile and updates its interests automatically from its dynamic categories and subject. Existing unsent offers refresh their audience when those interests change. Consent applies once across connected businesses; no separate enrollment form is required. Raw conversations and staff notes remain private to the business. Offer matching uses consented interests and language, excluding names, phone numbers and raw chats from the AI request.
+After YES, Haiku analyses the held messages, creates the shared customer profile and updates its interests automatically from its dynamic categories and subject. Existing unsent offers refresh their audience when those interests change. Consent applies once across connected businesses; no separate enrollment form is required. Business accounts can view their own customer contacts and interests extracted from their own chats. Other businesses cannot browse those contacts, conversations, or notes. The central administrator can view all businesses. The recommendation service uses consented interests to find suitable published offers across businesses.
 
-Inbox details show consent status. The existing verified customer portal remains an optional preferences route. Its opt-out removes the profile, chats and old access links. Neither the AI nor staff can infer an opt-in. Declines and natural-language promotional withdrawals remove saved data and prevent future collection; ambiguous sends are not blindly retried.
+Inbox details show consent status. The existing verified customer portal remains an optional preferences route. Its opt-out removes the profile, chats and old access links. Neither the AI nor staff can infer an opt-in. Global withdrawals remove saved data and prevent future collection. Topic-specific stops only suppress that topic. Ambiguous sends are not blindly retried.
 
 ## Automatic AI analysis
 
@@ -39,40 +39,47 @@ Set OPENROUTER_API_KEY to enable live analysis. Without it, the interface shows 
 
 ## Offers and campaigns
 
-Open **Campaigns** to submit an offer for any business. Haiku automatically classifies the offer and matches customers using consented AI-derived interests and product/service/topic. Names, phone numbers, private conversations, and staff notes are excluded from matching requests. Only active, unheld profiles with the offer's language are eligible; this demo supports up to 100 per language. Datamine administrators see the audience and match reasons; ordinary business staff see only their own offers and status.
+Business owners/admins open **Campaigns** to create and send their own bulk offers. Haiku chooses the offer categories and matches only that business's consented customers, using interests and topics from its own chats. Active profiles, accepted consent, language, and topic preferences gate eligibility. This demo supports up to 100 eligible customers per campaign. Owners/admins can review their own customer contacts and match reasons; the central administrator can manage every campaign.
 
-The platform administrator chooses a central Datamine WhatsApp sender. Inside each offer, **Create template with AI** drafts a message with Haiku using only the business name and offer details. Staff can edit the plain text and submit it to Meta directly from Datamine; no trip to WhatsApp Manager is needed for template creation. Submission does not send to customers. Stable template names recover repeated submissions and lost responses without creating duplicate templates.
+Each campaign uses its business's connected WhatsApp sender. **Create template with AI** drafts plain text from the offer, which staff can edit and submit to Meta inside Datamine. The selector shows approved, pending, and rejected templates. It supports static body/footer text from the first 100 templates returned by Meta, without variables, buttons, or media. Selecting a template rematches the exact message. Template delivery requires current Meta approval.
 
-The template selector shows approved, pending and rejected marketing templates, with rejection reasons when Meta supplies them. Approval status refreshes every 30 seconds while the page is visible. The demo supports static body/footer templates without variables, buttons or media, from the first 100 returned by Meta. Meta must support the offer's language (or its regional variant); unsupported-language errors are shown in the dialog. Selecting or submitting a template automatically rematches the exact message customers will receive. Template delivery requires current approval, checked again by the server. Classification never sends messages on its own.
+For matched customers with an open 24-hour chat window on that same sender, **Send now on WhatsApp** sends the preview as a real text reply. Closed windows are skipped. A pending template is not treated as approved, and no messaging window is bypassed. Manual bulk sends still require the business to click Send; the one-offer limit below applies only to automatic recommendations.
 
-For a live presentation without waiting for template review, **Send now on WhatsApp** sends a real text reply to matched, enrolled customers with an open 24-hour chat window on the selected sender. The preview uses the attached message body or the offer text, plus an opt-out line. The page shows eligibility and expiry times; a fresh customer message updates readiness automatically. Closed windows are skipped and checked again immediately before delivery. This does not approve a pending template or bypass Meta's messaging window. Before presenting, have the test customer message the connected number and wait for automatic analysis and audience matching to finish.
+Consent, topic preferences, profile revisions, sender ownership, and the reply window are checked again before delivery. Durable claims prevent duplicate submissions. STOP and deletion are serialized with actual submission; queued messages are cancelled, while a message already submitted cannot be recalled. Uncertain provider outcomes are never automatically resent.
 
-Each recipient has a durable claim and tracked message. The sender's current template approval, enrollment, opt-out/hold state, language, and profile revision are checked again. Changed preferences require fresh matching; cancellation stops queued recipients. Uncertain sends are not automatically retried. Provider callbacks supply delivery status without regressing read/delivered receipts.
+## Automatic recommendations
 
-Incoming messages from enrolled customers put offers on hold until automatic analysis checks them for opt-out. Explicit STOP/unsubscribe commands suppress immediately, including when AI is unavailable. Haiku can suppress promotional messages but cannot grant consent or undo an opt-out. Customers can also opt out through their verified preferences page.
+A business explicitly enables **Recommend across Datamine** for an offer and sets **Available until**. Existing offers stay unpublished until enabled. Availability must be in the future and no more than 90 days away; offers can be unpublished at any time.
 
-The public Campaigns demo contains a prepared furniture offer and simulated delivery. New sample drafts are temporary and explicitly require a real AI connection for new matching.
+After at least two genuine inbound requests about the same topic, AI compares relevant, available offers from other participating businesses. It selects at most one clear match using the stated needs, budget, location, and offer details. It sends nothing if the supplied offers do not fit. "Best" means the best suitable candidate supplied to the model, not a claim about the whole market.
 
-Replies are saved before a direct Meta request. A unique request ID prevents repeated submissions; a lost response is marked uncertain and is not retried automatically. Signed callbacks can reconcile it, and delayed events cannot move read/delivered messages backward. Text replies require a customer message within the last 24 hours, following [WhatsApp's messaging policy](https://business.whatsapp.com/policy). Outside that window, this demo waits for another customer message.
+One automatic offer is sent, then that topic waits. Only an explicit **MORE** or equivalent request can send one further unseen offer. Another ordinary product question does not request more. Categories and topics come from AI rather than a fixed list.
+
+- **STOP OFFER** stops the latest offer's topic. Customers can also name a topic to stop. Other topics remain available, and MORE does not undo a topic stop.
+- **STOP**, **STOP ALL**, or **DELETE MY DATA** withdraws from the whole service and removes saved chats, customer profiles, recommendation records, and queued offers. A minimal consent-choice record prevents new collection. A later explicit YES can rejoin.
+
+Recommendations reply through the originating business number the customer contacted. They are sent only while that number's 24-hour customer-service window is open. An expired window waits for a fresh customer message. Supplier contact details appear in the offer; the supplier does not receive access to the customer's CRM record. This flow does not bypass Meta template approval or messaging limits.
+
+The public demo uses temporary fixtures and simulated delivery. Automated integration tests mock Meta and OpenRouter. The optional live-AI smoke below uses real Haiku with synthetic customer requests; Meta delivery remains mocked.
 
 ## Local development
 
 Use Node.js 24 and npm. Install dependencies with `npm ci`. Copy `.env.example` to `.env.local` and provide a PostgreSQL connection plus the configuration below. No secrets belong in Git.
 
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | PostgreSQL connection string; Neon pooled URL on Vercel, internal URL on Render |
-| `BETTER_AUTH_URL` | Canonical app URL; defaults to the hosting provider's URL |
-| `BETTER_AUTH_SECRET` | Random secret, at least 32 characters |
-| `CREDENTIAL_ENCRYPTION_KEY` | 32 random bytes encoded as 64 hexadecimal characters |
-| `WHATSAPP_VERIFY_TOKEN` | Random verification secret, at least 32 characters |
-| `BOOTSTRAP_ADMIN_EMAIL` | Initial workspace owner's email |
-| `BOOTSTRAP_ADMIN_PASSWORD` | Strong initial password; at least 12 characters |
-| `BOOTSTRAP_ADMIN_NAME` | Initial owner's display name |
-| `META_GRAPH_VERSION` | Supported Meta Graph version, default `v23.0` |
-| `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5`; other model values disable analysis |
-| `OPENROUTER_API_KEY` | Server-only OpenRouter key with credits and access to Haiku 5.5; optional for the sample demo |
-| `CRON_SECRET` | Random secret for Vercel's daily job recovery and authenticated queue wakeups |
+| Variable                    | Purpose                                                                                       |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`              | PostgreSQL connection string; Neon pooled URL on Vercel, internal URL on Render               |
+| `BETTER_AUTH_URL`           | Canonical app URL; defaults to the hosting provider's URL                                     |
+| `BETTER_AUTH_SECRET`        | Random secret, at least 32 characters                                                         |
+| `CREDENTIAL_ENCRYPTION_KEY` | 32 random bytes encoded as 64 hexadecimal characters                                          |
+| `WHATSAPP_VERIFY_TOKEN`     | Random verification secret, at least 32 characters                                            |
+| `BOOTSTRAP_ADMIN_EMAIL`     | Initial workspace owner's email                                                               |
+| `BOOTSTRAP_ADMIN_PASSWORD`  | Strong initial password; at least 12 characters                                               |
+| `BOOTSTRAP_ADMIN_NAME`      | Initial owner's display name                                                                  |
+| `META_GRAPH_VERSION`        | Supported Meta Graph version, default `v23.0`                                                 |
+| `OPENROUTER_MODEL`          | `anthropic/claude-haiku-5.5`; other model values disable analysis                             |
+| `OPENROUTER_API_KEY`        | Server-only OpenRouter key with credits and access to Haiku 5.5; optional for the sample demo |
+| `CRON_SECRET`               | Random secret for Vercel's daily job recovery and authenticated queue wakeups                 |
 
 Generate secrets locally with Node's `crypto.randomBytes(32).toString('hex')`. Store them in your environment or password manager.
 
@@ -82,7 +89,9 @@ node --env-file=.env.local --import tsx scripts/bootstrap.ts
 npm run dev
 ```
 
-The bootstrap creates one Datamine agency and one owner **only when no users exist**. It never resets an existing account's password. Change the initial password in Settings and remove the bootstrap password from the deployment environment afterward.
+Migrations include `0009_smart_offer_flow.sql`, which adds topic preferences, explicit network availability, and durable recommendation jobs. Existing offers default to unpublished.
+
+The bootstrap creates one Datamine agency and one central owner **only when no users exist**. It never resets an existing account's password. Change the initial password in Settings and remove the bootstrap password from the deployment environment afterward.
 
 For local testing without a PostgreSQL installation, run `npx tsx scripts/local-db.ts` in a separate terminal. This launches PGlite's PostgreSQL-compatible socket on **127.0.0.1:54329** and stores local data under ignored `.local/`. Use `postgresql://postgres:postgres@127.0.0.1:54329/postgres`. PGlite is development tooling, not the production database.
 
@@ -95,14 +104,21 @@ npm test
 npm run build
 ```
 
-With the locally built app running against the isolated local socket database and AUTOMATION_DISABLED=true on the app process (to isolate provider mocks), run:
+The integration suites use isolated PGlite databases and mock external providers. Target the new flow with:
 
 ```sh
-node --env-file=.env.local --import tsx scripts/smoke.ts
-node --env-file=.env.local --import tsx scripts/smoke-phase5.ts
+node --import tsx --test tests/access.test.ts tests/business-http.test.ts tests/campaign-replies.test.ts tests/recommendations.test.ts
 ```
 
-This exercises login, invitations, business isolation/settings, three locales, signed webhooks, inbox edits, delivery safeguards, AI persistence/cache/evidence, verification expiry/replay/throttling, explicit consent, shared profile deduplication, opt-out, and private-data boundaries. The Phase 5 suite additionally checks automatic processing, retries/recovery, manual overrides, dynamic labels, campaign privacy, exact-template matching, consent changes, deduplicated delivery, uncertain outcomes, and opt-outs. Meta and OpenRouter requests are mocked. The suites create test fixtures and **refuse to run against a remote deployment**. Production health is checked separately through `/api/health`.
+These cover central administration, owner invitations, business isolation, scoped audiences, consent, publication expiry, repeated interest, one offer then MORE, topic stops, global deletion, sender windows, and duplicate/uncertain delivery. No test fixtures should be created in production. Check `/api/health` separately and perform an authorized, controlled WhatsApp acceptance test before presenting the new flow.
+
+For an optional real-model check, set `OPENROUTER_API_KEY` in the current process, then run:
+
+```sh
+node --import tsx scripts/smoke-smart-offers.ts --live-ai
+```
+
+This spends OpenRouter credits, creates a disposable PGlite database on port 54339, and mocks every Meta message. It checks consent, repeated interest, the better-priced matching offer from another business, MORE, topic stops, a different interest, and complete withdrawal. It never uses the application's database or sends a real WhatsApp message. The completed smoke used `anthropic/claude-haiku-5.5`; live WhatsApp delivery requires a separate controlled check.
 
 ## Deployment
 
@@ -110,7 +126,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for Vercel + Neon setup, the Render alternati
 
 ## Security boundaries
 
-All agency APIs validate a Better Auth session and membership on the server. Client-side navigation is not an authorization boundary. Management operations additionally require owner/admin agency roles, and agency creation requires the platform administrator role. Credential ciphertext uses AES-256-GCM with the connection identifier as authenticated context. Neither tokens nor app secrets appear in workspace JSON, logs, or sample data.
+All agency APIs validate a Better Auth session on the server. Business users require membership, with owner/admin roles for management. The central platform administrator can access all businesses without separate memberships. Client-side navigation is not an authorization boundary, and only the platform administrator can create businesses. Credential ciphertext uses AES-256-GCM with the connection identifier as authenticated context. Neither tokens nor app secrets appear in workspace JSON, logs, or sample data.
 
 Webhook signatures cover the unmodified request body. Each known phone number in a batch is checked against its stored app secret and WABA ID; one agency's payload is never stored as another agency's event. A successful callback response follows a committed database transaction. Database failures return a retryable response. Meta media files are not downloaded in this phase.
 

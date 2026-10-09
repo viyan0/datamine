@@ -64,6 +64,13 @@
       "when": 1791533719154,
       "tag": "0008_campaign_reply_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791536739946,
+      "tag": "0009_smart_offer_flow",
+      "breakpoints": true
     }
   ]
 }

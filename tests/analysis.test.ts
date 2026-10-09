@@ -181,6 +181,81 @@ test('a real quote cannot be used to smuggle an invented fact value', () => {
   );
 });
 
+test('automatic topic-stop acknowledgements cannot break analysis or become global withdrawal', () => {
+  const acknowledgement: SourceMessage = {
+    id: 'bot-stop',
+    direction: 'outbound',
+    body: 'Offers about bicycles are stopped.',
+    timestamp: new Date().toISOString(),
+  };
+  const stop = { value: 'bicycles', quote: acknowledgement.body, messageId: acknowledgement.id };
+  assert.equal(
+    validateAnalysis({ ...valid, stopOffers: stop }, [...source, acknowledgement]).stopOffers,
+    null,
+  );
+  const topicCommand: SourceMessage = {
+    ...acknowledgement,
+    id: 'customer-stop',
+    direction: 'inbound',
+    body: 'STOP OFFER',
+  };
+  assert.equal(
+    validateAnalysis(
+      {
+        ...valid,
+        stopOffers: { value: 'STOP OFFER', quote: 'STOP OFFER', messageId: topicCommand.id },
+      },
+      [...source, topicCommand],
+    ).stopOffers,
+    null,
+  );
+  assert.throws(
+    () => validateAnalysis({ ...valid, subject: stop }, [...source, acknowledgement]),
+    AnalysisError,
+  );
+});
+
+test('one evidence repair uses original messages and still rejects an unsupported repaired fact', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.OPENROUTER_API_KEY;
+  process.env.OPENROUTER_API_KEY = 'isolated-test-only';
+  const invalid = {
+    ...valid,
+    subject: { value: 'Dubai', quote: 'two return tickets', messageId: 'sample-msg-1' },
+  };
+  let calls = 0,
+    failRepair = false;
+  globalThis.fetch = async (_url, init) => {
+    calls++;
+    const input = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
+    assert.deepEqual(input.messages, source);
+    if (calls % 2 === 0) assert.deepEqual(input.rejectedAnalysis, invalid);
+    return Response.json({
+      model: 'anthropic/claude-haiku-5.5',
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: { content: JSON.stringify(calls % 2 === 1 || failRepair ? invalid : valid) },
+        },
+      ],
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+  };
+  try {
+    const result = await analyzeWithHaiku(source, 'en', business);
+    assert.equal(result.inputTokens, 200);
+    assert.equal(result.outputTokens, 100);
+    assert.equal(calls, 2);
+    failRepair = true;
+    await assert.rejects(analyzeWithHaiku(source, 'en', business), { code: 'analysisInvalid' });
+    assert.equal(calls, 4);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalKey;
+  }
+});
+
 test('capitalized AI values keep the exact source spelling without accepting invented evidence', () => {
   const messages: SourceMessage[] = [
     {

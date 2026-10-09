@@ -190,7 +190,8 @@
     "metaTemplatePermission": "This WhatsApp connection does not have permission to manage templates.",
     "templateSubmitFailed": "Meta could not accept this template. Check the message and try again.",
     "templateSubmissionUnknown": "Meta did not confirm the submission. Try submitting the same text again; Datamine checks for an existing template first.",
-    "campaignReplyWindowClosed": "Ask a matched customer to send a new WhatsApp message to the selected sender, then try again. Replies require an open 24-hour chat window."
+    "campaignReplyWindowClosed": "Ask a matched customer to send a new WhatsApp message to the selected sender, then try again. Replies require an open 24-hour chat window.",
+    "offerExpired": "Choose a future availability date."
   },
   "networkLabel": "THE DATAMINE NETWORK",
   "agencyCount": "{count} businesses",
@@ -433,10 +434,10 @@
     "status": "Status",
     "consentDate": "Last opt-in",
     "noProfiles": "No matching customers",
-    "noProfilesHint": "Customers appear after verifying their number and choosing to join.",
+    "noProfilesHint": "Customers appear after consenting in WhatsApp.",
     "demoDirectory": "Explore sample profiles or try the opt-in flow. Demo preferences stay in this browser tab only.",
     "singleConsent": "WhatsApp consent",
-    "consentAccepted": "Accepted once. AI updates interests and matches offers automatically; no extra enrollment is needed.",
+    "consentAccepted": "Enrolled. STOP OFFER blocks the last offered topic. STOP ends the service and removes saved data.",
     "consentPending": "Waiting for the customer to reply YES to the WhatsApp notice. NO removes the held chat and blocks collection.",
     "consentDeclined": "Consent withdrawn. Saved chats and interests are removed.",
     "consentFailed": "The consent notice could not be confirmed. Analysis and offers stay paused.",
@@ -523,7 +524,11 @@
     "sendReply": "Send now on WhatsApp",
     "replyUntil": "Can receive a reply until {time}",
     "windowClosed": "Needs a new customer message",
-    "templateTools": "Approved templates · create and manage"
+    "templateTools": "Approved templates · create and manage",
+    "networkPublish": "Recommend across Datamine",
+    "networkUntil": "Available until",
+    "networkSave": "Save availability",
+    "networkHint": "One relevant offer automatically. More only on request."
   },
   "dashboard": {
     "received": "Received",
@@ -540,5 +545,7 @@
     "noActivity": "No messages in this period",
     "conversations": "Conversations",
     "totalChats": "Total conversations"
-  }
+  },
+  "businessLogin": "Create login",
+  "businessLoginHelp": "Share this link with the business owner. They choose their password."
 }

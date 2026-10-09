@@ -1,10 +1,7 @@
-import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { getDb } from '@/db';
-import { conversations } from '@/db/schema';
 import { requireAgency, HttpError } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
-import { conversationMessages } from '@/lib/inbox';
+import { conversationMessages, updateConversationDetails } from '@/lib/inbox';
 import { inquiryStatuses } from '@/lib/inbox-types';
 import { categorySchema } from '@/lib/business';
 import { wakeAutomation } from '@/lib/automation';
@@ -31,19 +28,7 @@ export async function PATCH(request: Request, { params }: Context) {
     const input = await bodyJson(request);
     const reset = z.object({ automatic: z.literal(true) }).safeParse(input);
     if (reset.success) {
-      const [row] = await getDb()
-        .update(conversations)
-        .set({
-          manualFields: [],
-          analysis: null,
-          analysisStatus: 'pending',
-          analysisDueAt: new Date(),
-          analysisAttempts: 0,
-          analysisRevision: sql`${conversations.analysisRevision} + 1`,
-        })
-        .where(and(eq(conversations.id, conversationId), eq(conversations.agencyId, id)))
-        .returning({ id: conversations.id });
-      if (!row) throw new HttpError(404, 'notFound');
+      await updateConversationDetails(id, conversationId, { automatic: true });
       await wakeAutomation();
       return Response.json({ ok: true });
     }
@@ -57,21 +42,7 @@ export async function PATCH(request: Request, { params }: Context) {
       })
       .partial()
       .parse(input);
-    await getDb().transaction(async (tx) => {
-      const [current] = await tx
-        .select()
-        .from(conversations)
-        .where(and(eq(conversations.id, conversationId), eq(conversations.agencyId, id)))
-        .for('update');
-      if (!current) throw new HttpError(404, 'notFound');
-      const changed = (['service', 'destination', 'inquiryStatus'] as const).filter(
-        (field) => fields[field] !== undefined && current[field] !== fields[field],
-      );
-      await tx
-        .update(conversations)
-        .set({ ...fields, manualFields: [...new Set([...current.manualFields, ...changed])] })
-        .where(eq(conversations.id, conversationId));
-    });
+    if (await updateConversationDetails(id, conversationId, fields)) await wakeAutomation();
     return Response.json({ ok: true });
   } catch (error) {
     return apiError(error);

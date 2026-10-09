@@ -58,6 +58,56 @@ test('queue wakeups respect retries and leases, recover sends, and stop when idl
     );
     await db.exec("update messages set delivery_status='uncertain'");
     assert.equal(await due(), null);
+    await db.exec(`
+      insert into messages(id,agency_id,connection_id,direction,contact_phone,type,provider_timestamp)
+      values ('trigger','a','c','inbound','test','text',now());
+      insert into recommendation_jobs(id,profile_id,conversation_id,trigger_message_id,mode,status,source_revision,profile_updated_at)
+      values ('recommendation','profile','t','trigger','interest','pending',1,now());
+    `);
+    assert.equal(automationDelay(await due()), 2, 'pending recommendation wakes AI');
+    assert.equal(await due(false), null, 'pending recommendation waits when AI is missing');
+    await db.exec(
+      "update recommendation_jobs set status='error', due_at=now() + interval '5 minutes'",
+    );
+    assert.ok(automationDelay(await due())! > 290, 'recommendation error respects backoff');
+    await db.exec('update recommendation_jobs set due_at=null');
+    assert.equal(await due(), null, 'exhausted recommendation retries do not spin');
+    await db.exec(
+      "update recommendation_jobs set status='processing', due_at=now(), started_at=now(), run_id='r'",
+    );
+    assert.ok(automationDelay(await due())! >= 89, 'active recommendation rank keeps its lease');
+    await db.exec("update recommendation_jobs set started_at=now() - interval '2 minutes'");
+    assert.equal(automationDelay(await due()), 2, 'expired rank is recoverable');
+    await db.exec("update recommendation_jobs set status='queued', mode='stop', run_id=null");
+    assert.equal(
+      automationDelay(await due(false)),
+      2,
+      'topic-stop acknowledgement works without AI',
+    );
+    await db.exec(
+      "update recommendation_jobs set status='submitting', started_at=now(), due_at=null",
+    );
+    assert.ok(
+      automationDelay(await due(false))! >= 89,
+      'in-flight recommendation send waits for recovery',
+    );
+    await db.exec("update recommendation_jobs set started_at=now() - interval '2 minutes'");
+    assert.equal(
+      automationDelay(await due(false)),
+      2,
+      'uncertain recommendation needs recovery without AI',
+    );
+    await db.exec("update recommendation_jobs set status='uncertain'");
+    assert.equal(await due(), null, 'ambiguous recommendation is never replayed');
+    await db.exec(
+      "update messages set request_id='recommendation', delivery_status='submitting', created_at=now() where id='m'",
+    );
+    assert.ok(
+      automationDelay(await due(false))! >= 89,
+      'orphaned recommendation message is also recovered',
+    );
+    await db.exec("update messages set delivery_status='uncertain' where id='m'");
+    assert.equal(await due(), null);
     assert.equal(automationDelay(null), null);
   } finally {
     await db.close();

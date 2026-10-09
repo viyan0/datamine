@@ -12,7 +12,9 @@ import {
 } from '@/db/schema';
 import { decrypt, verifySignature } from './security';
 import { HttpError } from './access';
-import { handleCustomerConsent } from './consent';
+import { handleCustomerConsent, syncCustomerInterests } from './consent';
+import { handleImmediateTopicStop, scheduleRecommendation } from './recommendations';
+import { offerCommand } from './offer-preferences';
 
 const eventSchema = z.object({
   object: z.literal('whatsapp_business_account'),
@@ -135,7 +137,19 @@ export async function ingestWebhook(raw: string, signature: string | null) {
             .onConflictDoNothing()
             .returning({ id: providerEvents.id });
           if (inserted.length) {
-            await tx
+            const [previous] =
+              consent.accepted && offerCommand(message.text?.body || '') === 'stop'
+                ? await tx
+                    .select()
+                    .from(conversations)
+                    .where(
+                      and(
+                        eq(conversations.connectionId, connection.id),
+                        eq(conversations.contactPhone, message.from),
+                      ),
+                    )
+                : [];
+            const [thread] = await tx
               .insert(conversations)
               .values({
                 id: randomUUID(),
@@ -159,8 +173,9 @@ export async function ingestWebhook(raw: string, signature: string | null) {
                   analysisAttempts: 0,
                   analysisRevision: sql`${conversations.analysisRevision} + 1`,
                 },
-              });
-            await tx
+              })
+              .returning({ id: conversations.id });
+            const [savedMessage] = await tx
               .insert(messages)
               .values({
                 id: randomUUID(),
@@ -173,9 +188,43 @@ export async function ingestWebhook(raw: string, signature: string | null) {
                 body: message.type === 'text' ? (message.text?.body ?? null) : null,
                 providerTimestamp: timestamp,
               })
-              .onConflictDoNothing();
+              .onConflictDoNothing()
+              .returning({ id: messages.id });
             stored++;
-            if (consent.accepted)
+            const stoppedTopic =
+              consent.accepted &&
+              savedMessage &&
+              (await handleImmediateTopicStop(tx, {
+                phone: message.from,
+                connectionId: connection.id,
+                messageId: savedMessage.id,
+                text: message.text?.body || '',
+                timestamp,
+              }));
+            if (stoppedTopic) {
+              const unfinished =
+                previous &&
+                ['pending', 'processing', 'error', 'awaitingConsent'].includes(
+                  previous.analysisStatus,
+                );
+              await tx
+                .update(conversations)
+                .set({
+                  analysisStatus: unfinished ? previous.analysisStatus : 'complete',
+                  analysisDueAt: unfinished
+                    ? previous.analysisDueAt || new Date(Date.now() + 2000)
+                    : null,
+                  analysisError: unfinished ? previous.analysisError : null,
+                })
+                .where(
+                  and(
+                    eq(conversations.connectionId, connection.id),
+                    eq(conversations.contactPhone, message.from),
+                  ),
+                );
+              await syncCustomerInterests(tx, message.from);
+              await scheduleRecommendation(tx, thread.id);
+            } else if (consent.accepted)
               await tx
                 .update(sharedProfiles)
                 .set({ offerHold: true })

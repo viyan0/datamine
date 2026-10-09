@@ -2,7 +2,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { agencies, conversations, messages, sharedProfiles, customerConsents } from '@/db/schema';
-import { consentAllowsAnalysis, syncCustomerInterests, clearCustomerData } from './consent';
+import {
+  consentAllowsAnalysis,
+  syncCustomerInterests,
+  clearCustomerData,
+  consentChoice,
+} from './consent';
+import { scheduleRecommendation } from './recommendations';
 import type { BusinessContext } from './business';
 import { getConversation } from './inbox';
 import {
@@ -95,6 +101,7 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
           and(eq(conversations.id, id), eq(conversations.analysisRevision, c.analysisRevision)),
         );
       await syncCustomerInterests(tx, c.contactPhone);
+      await scheduleRecommendation(tx, id);
     });
     return c.analysis;
   }
@@ -186,7 +193,7 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
         .for('update');
       const [stopMessage] = analysis.result.stopOffers
         ? await tx
-            .select({ createdAt: messages.createdAt })
+            .select({ createdAt: messages.createdAt, body: messages.body })
             .from(messages)
             .where(eq(messages.id, analysis.result.stopOffers.messageId))
         : [];
@@ -195,6 +202,7 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
         !!profile &&
         profile.status === 'active' &&
         !!stopMessage &&
+        consentChoice(stopMessage.body || '', 'accepted') === 'declined' &&
         stopMessage.createdAt >= profile.consentAt;
       if (profile && optOut) {
         await clearCustomerData(tx, c.contactPhone);
@@ -213,6 +221,7 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
         return;
       }
       await syncCustomerInterests(tx, c.contactPhone);
+      await scheduleRecommendation(tx, id);
     });
     return analysis;
   } finally {

@@ -17,15 +17,20 @@ import {
 import { decrypt } from './security';
 import { sendMetaText } from './meta';
 import { replyWindowOpen } from './inbox-types';
+import { purgeRecommendations } from './recommendations';
 
 type Transaction = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0];
-export const whatsappConsentVersion = '2026-10-08-whatsapp-v2';
+export const whatsappConsentVersion = '2026-10-09-whatsapp-v3';
 export function consentChoice(text: string, status: string) {
   const value = text
     .trim()
     .replace(/[.!؟\s]+$/u, '')
     .toLocaleLowerCase();
-  if (/^(stop|unsubscribe|stop offers|إلغاء الاشتراك|توقف|وەستان|وازهێنان)$/u.test(value))
+  if (
+    /^(stop|stop all|stop everything|unsubscribe|delete my data|delete all my data|delete my account|stop the service|stop all offers|stop all promotions|stop all messages|please stop sending me offers|please delete my data|إلغاء الاشتراك|توقف|إيقاف الكل|وقف كل العروض|احذف بياناتي|احذف كل بياناتي|حذف بياناتي|وەستان|وازهێنان|هەمووی بوەستێنە|داتاکانم بسڕەوە)$/u.test(
+      value,
+    )
+  )
     return 'declined';
   if (status !== 'accepted' && /^(no|لا|كلا|نەخێر|نە)$/u.test(value)) return 'declined';
   if (status !== 'accepted' && /^(yes|agree|نعم|أوافق|اوافق|بەڵێ|ڕازیم)$/u.test(value))
@@ -38,7 +43,7 @@ export function consentReply(status: string, locale: string) {
       pending:
         'Datamine: May we save and analyse your WhatsApp messages with AI to learn your interests and send you relevant promotions from Datamine and participating businesses? Reply YES to accept once, or NO to decline. Your chat is held without AI processing while you decide; NO removes it and blocks further collection. We keep only a minimal record of your choice. You can withdraw later by replying STOP.',
       accepted:
-        'Thank you. Your Datamine consent is saved and you are enrolled. AI will update your interests and match relevant offers automatically. No extra enrollment is needed. Reply STOP at any time to withdraw.',
+        'You are enrolled. Datamine learns your interests and may send one relevant offer from participating businesses. Reply MORE for another, STOP OFFER to stop that topic, or STOP to stop Datamine and delete your saved chat and interests.',
       declined:
         'Understood. Datamine has removed your saved chat and interest profile and will not collect further chat messages or send promotions. Only a minimal record of your choice is kept. Reply YES if you later choose to join.',
     },
@@ -46,7 +51,7 @@ export function consentReply(status: string, locale: string) {
       pending:
         'Datamine: هل توافق على حفظ رسائل واتساب وتحليلها بالذكاء الاصطناعي لمعرفة اهتماماتك وإرسال عروض مناسبة من Datamine والشركات المشاركة؟ أرسل نعم للموافقة مرة واحدة أو لا للرفض. تُحفظ المحادثة مؤقتاً دون تحليل حتى تختار؛ الرفض يحذفها ويوقف جمع الرسائل. نحتفظ فقط بسجل مختصر لاختيارك. يمكنك الانسحاب لاحقاً بإرسال STOP.',
       accepted:
-        'شكراً. حُفظت موافقتك وانضممت إلى Datamine. سيحدّث الذكاء الاصطناعي اهتماماتك ويطابق العروض تلقائياً دون تسجيل إضافي. أرسل STOP للانسحاب في أي وقت.',
+        'تم الاشتراك. يتعلم Datamine اهتماماتك وقد يرسل عرضاً مناسباً من الشركات المشاركة. أرسل MORE لعرض آخر، أو STOP OFFER لإيقاف هذا الموضوع، أو STOP لإيقاف الخدمة وحذف المحادثة والاهتمامات المحفوظة.',
       declined:
         'تم حذف المحادثة المحفوظة وملف اهتماماتك. لن يجمع Datamine رسائل أخرى أو يرسل عروضاً. نحتفظ فقط بسجل مختصر لاختيارك. أرسل نعم إذا أردت الانضمام لاحقاً.',
     },
@@ -54,7 +59,7 @@ export function consentReply(status: string, locale: string) {
       pending:
         'Datamine: ڕازیت پەیامەکانی واتساپت هەڵبگرین و بە زیرەکی دەستکرد شیکاری بکەین بۆ ناسینی ئارەزووەکانت و ناردنی ئۆفەری گونجاو لە Datamine و کاروبارە بەشدارەکان؟ یەک جار بەڵێ بنێر بۆ ڕەزامەندی یان نەخێر بۆ ڕەتکردنەوە. تا هەڵدەبژێریت گفتوگۆکە بە کاتی هەڵدەگیرێت بەبێ شیکاری؛ نەخێر بیسڕێتەوە و کۆکردنەوە دەوەستێنێت. تەنها تۆمارێکی کەم لە هەڵبژاردنت دەپارێزین. دواتر STOP بنێر بۆ وەستان.',
       accepted:
-        'سوپاس. ڕەزامەندیت تۆمار کرا و بوویتە ئەندامی Datamine. زیرەکی دەستکرد ئارەزووەکانت نوێ دەکاتەوە و ئۆفەرە گونجاوەکان خۆکار هاوتا دەکات. تۆمارکردنی دووبارە پێویست نییە. بۆ وەستان STOP بنێرە.',
+        'بەشدار بوویت. Datamine ئارەزووەکانت دەناسێت و ڕەنگە ئۆفەرێکی گونجاو بنێرێت. بۆ یەکێکی دیکە MORE بنێرە، بۆ وەستانی ئەم بابەتە STOP OFFER، یان بۆ وەستانی خزمەتگوزاری و سڕینەوەی گفتوگۆ و ئارەزووەکانت STOP بنێرە.',
       declined:
         'گفتوگۆی هەڵگیراو و پرۆفایلی ئارەزووەکانت سڕایەوە. Datamine پەیامی دیکە کۆناکاتەوە و ئۆفەر نانێرێت. تەنها تۆمارێکی کەم لە هەڵبژاردنت دەپارێزین. ئەگەر دواتر دەتەوێت بەشدار بیت، بەڵێ بنێرە.',
     },
@@ -76,6 +81,7 @@ export async function refreshOfferAudiences(tx: Transaction, locales: string[]) 
     );
 }
 export async function clearCustomerData(tx: Transaction, phone: string) {
+  await purgeRecommendations(tx, phone);
   const profiles = await tx.select().from(sharedProfiles).where(eq(sharedProfiles.phone, phone));
   for (const p of profiles) {
     await tx.delete(campaignRecipients).where(eq(campaignRecipients.profileId, p.id));

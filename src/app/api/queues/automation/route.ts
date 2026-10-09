@@ -1,6 +1,7 @@
 import { processConsentReplies } from '@/lib/consent';
 import { processPendingAnalysis } from '@/lib/analysis';
 import { processCampaigns } from '@/lib/campaigns';
+import { processRecommendations } from '@/lib/recommendations';
 import {
   automationQueue,
   automationToken,
@@ -17,7 +18,9 @@ export const POST = automationQueue.handleCallback(
     if (typeof message?.token !== 'string' || !secureEqual(message.token, automationToken()))
       throw new Error('Invalid automation message');
     await processConsentReplies(2);
-    await Promise.all([processPendingAnalysis(2), processCampaigns()]);
+    await processPendingAnalysis(1);
+    await processRecommendations(1);
+    await processCampaigns(2);
     const delaySeconds = await nextAutomationDelay();
     if (delaySeconds !== null) {
       await automationQueue.send(

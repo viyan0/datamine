@@ -1,5 +1,5 @@
 export const analysisModel = 'claude-haiku-5-5';
-export const analysisVersion = 4;
+export const analysisVersion = 5;
 export const analysisLanguages = ['en', 'ar', 'ckb', 'mixed', 'other', 'unknown'] as const;
 export type SourceMessage = { id: string; direction: string; body: string; timestamp: string };
 export type CustomerFact = { value: string; messageId: string; quote: string } | null;

@@ -5,7 +5,7 @@ import { getDb } from '@/db';
 import { campaigns, memberships } from '@/db/schema';
 import { requireAgency, requireSession, HttpError } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
-import { listCampaigns } from '@/lib/campaigns';
+import { listCampaigns, networkAvailability } from '@/lib/campaigns';
 import { analysisConfigured } from '@/lib/anthropic';
 import { wakeAutomation } from '@/lib/automation';
 export async function GET() {
@@ -38,15 +38,21 @@ export async function POST(request: Request) {
         title: z.string().trim().min(2).max(100),
         offerText: z.string().trim().min(10).max(3000),
         locale: z.enum(['en', 'ar', 'ckb']),
+        networkEnabled: z.boolean().default(false),
+        networkExpiresAt: z.string().max(40).nullable().optional(),
       })
       .parse(await bodyJson(request));
-    const { session, membership } = await requireAgency(input.agencyId);
-    if (!['owner', 'admin', 'agent'].includes(membership.role))
-      throw new HttpError(403, 'forbidden');
+    const { session, membership } = await requireAgency(input.agencyId, true);
+    if (!['owner', 'admin'].includes(membership.role)) throw new HttpError(403, 'forbidden');
     const id = randomUUID();
     await getDb()
       .insert(campaigns)
-      .values({ id, ...input, createdBy: session.user.id });
+      .values({
+        id,
+        ...input,
+        ...networkAvailability(input.networkEnabled, input.networkExpiresAt),
+        createdBy: session.user.id,
+      });
     await wakeAutomation();
     return Response.json({ id }, { status: 201 });
   } catch (error) {

@@ -6,6 +6,8 @@ export type CampaignView = {
   offerText: string;
   locale: string;
   status: string;
+  networkEnabled?: boolean;
+  networkExpiresAt?: string | null;
   deliveryMode?: 'template' | 'reply';
   replySenderLabel?: string;
   createdAt: string;

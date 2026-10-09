@@ -1,5 +1,19 @@
 # Datamine delivery
 
+## One central consent, seller contacts and offer photos, 2026-10-09
+
+Application commit `ee4d73b` is pushed to GitHub and deployed to https://datamine-lilac.vercel.app as `dpl_CcqsUYBMYxshuE8HzAVQmcyoaiWY`. The production build and TypeScript compilation passed. Migration `0013_business_consent_offer_media` is applied to local and production PostgreSQL.
+
+A first message to a connected business queues one invitation from that business to Datamine's central WhatsApp chat. This invitation is not consent. The customer opens Datamine, receives the privacy notice and replies YES once. Subsequent connected-business conversations use that same consent without another enrollment. Chats awaiting a decision are held without AI processing; declining or withdrawing removes saved chats, interests and recommendation references. Business users retain access only to their own CRM.
+
+Recommendation evidence can now come from a business conversation while delivery always uses Datamine's central sender and its separate reply window. A fresh business request outside that window prepares a marketing template and waits for Meta approval. One offer, contextual MORE, topic stops, whole-service withdrawal and saved requests for future inventory retain their existing safeguards. Photo captions and sent templates are included in subsequent AI conversation context.
+
+Offers and manual campaign snapshots now store a seller WhatsApp number and an optional public HTTPS photo URL. New offers require a seller contact; an existing verified connection belonging to that business can supply it. Existing offers were backfilled only from their own verified business connections. Offer replies include the seller number and click-to-chat link. A photo with a caption is sent when the caption fits WhatsApp's 1,024-character limit; longer replies and approved text templates include the photo link. No image upload service or media-template editor was added. The UI accepts a public JPEG/PNG link (up to 5 MB at Meta); Meta must be able to retrieve it.
+
+Verification: 71 automated checks passed, plus ESLint, TypeScript and diff checks. An isolated signed-webhook test covers business inquiry, duplicate invitation prevention, central-only consent, AI analysis, a central photo offer with seller contact, and global deletion. Separate checks cover cross-business MORE/STOP, central-window template approval, privacy boundaries and future-offer requests. AI and Meta responses in these tests are mocked. Chrome saved and edited a local demo offer, then verified the authenticated production catalog and new contact/photo fields with no browser errors. Live health and automation recovery returned 200, anonymous catalog access returned 401, and the existing Meta credential lookup returned 200. The runtime error sample contained only the existing PostgreSQL SSL-mode deprecation warning.
+
+Production currently has one central WhatsApp sender, no separate connected business sender, three active offers with seller contacts, no uploaded/photo-linked offers, and two customers with accepted consent and complete analysis. A live cross-business invitation and real photo receipt remain unverified until a second business sender and an actual offer photo are supplied. No synthetic production offers or customers were created, and this release did not replay previously sent offers. Screenshot: `artifacts/central-consent-offer-form.png` (local, ignored).
+
 ## Keep unmatched requests open, 2026-10-09
 
 Application commit `0e3973a` is pushed to GitHub and deployed at https://datamine-lilac.vercel.app as `dpl_4b6XdkFoBmiFZds4h14iCCkgEdSY`. The production build and TypeScript compilation passed. Migration `0012_waiting_offer_requests` is applied to local and production PostgreSQL.

@@ -35,6 +35,12 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
   const db = getDb();
   const originalFetch = globalThis.fetch;
   const sends: { to: string; text: { body: string } }[] = [];
+  const rankingInputs: {
+    latestMessageId: string;
+    previousTopic: string | null;
+    waitingTopics: string[];
+    messages: { id: string; body: string }[];
+  }[] = [];
   let ambiguous = false;
   let invalidId = false;
   let verboseReason = false;
@@ -45,30 +51,40 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       const input = JSON.parse(JSON.parse(String(init?.body)).messages[1].content) as {
         mode: string;
         latestMessageId: string;
-        previousTopic: string;
+        previousTopic: string | null;
         waitingTopics: string[];
         blockedTopics: string[];
         messages: { id: string; body: string }[];
         offers: { id: string; text: string }[];
       };
+      rankingInputs.push(input);
       assert.ok(
         input.offers.every((o) => !['private', 'expired', 'archived-product'].includes(o.id)),
       );
       const latest = input.messages.find((m) => m.id === input.latestMessageId)!;
-      const naturalMore = /another offer/i.test(latest.body);
+      const contextualFollowup = latest.body === 'any offers for me?';
+      const naturalMore =
+        /another offer/i.test(latest.body) || (contextualFollowup && !!input.previousTopic);
+      const topicRequest = contextualFollowup
+        ? input.messages.filter((m) => m.id !== latest.id).at(-1)?.body || ''
+        : latest.body;
       const stopTopic = /stop phones offers/i.test(latest.body);
       const topic =
         input.mode === 'more' || naturalMore
-          ? input.previousTopic
-          : /bikes/i.test(latest.body)
-            ? 'bikes'
-            : /chairs/i.test(latest.body)
-              ? 'chairs'
-              : /flowers/i.test(latest.body)
-                ? 'flowers'
-                : 'phones';
+          ? input.previousTopic || ''
+          : /camera/i.test(topicRequest)
+            ? 'camera'
+            : /bikes/i.test(topicRequest)
+              ? 'bikes'
+              : /chairs/i.test(topicRequest)
+                ? 'chairs'
+                : /flowers/i.test(topicRequest)
+                  ? 'flowers'
+                  : 'phones';
       const evidence = input.messages
-        .filter((m) => m.body.toLowerCase().includes(topic))
+        .filter(
+          (m) => m.body.toLowerCase().includes(topic) || (contextualFollowup && m.id === latest.id),
+        )
         .map((m) => ({ messageId: m.id, quote: m.body }));
       const offer = input.offers.find((o) => o.text.toLowerCase().includes(topic));
       const eligible =
@@ -158,24 +174,28 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       },
     ]);
     await db.insert(schema.campaigns).values(
-      ['phones-a', 'phones-b', 'flowers', 'own', 'no-phone', 'private', 'expired'].map((id) => ({
-        id,
-        agencyId: id === 'own' ? 'origin' : id === 'no-phone' ? 'no-whatsapp' : 'supplier',
-        createdBy: 'owner',
-        title: id,
-        offerText:
-          id === 'own'
-            ? 'Central business bikes for 80 USD.'
-            : id === 'no-phone'
-              ? 'Office chairs for 50 USD.'
-              : id === 'flowers'
-                ? 'Fresh flowers bouquet for 25 USD.'
-                : 'New phones with 12 month warranty for 200 USD.',
-        locale: 'en',
-        status: 'complete',
-        networkEnabled: id !== 'private',
-        networkExpiresAt: new Date(Date.now() + (id === 'expired' ? -3600000 : 86400000)),
-      })),
+      ['phones-a', 'phones-b', 'flowers', 'camera', 'own', 'no-phone', 'private', 'expired'].map(
+        (id) => ({
+          id,
+          agencyId: id === 'own' ? 'origin' : id === 'no-phone' ? 'no-whatsapp' : 'supplier',
+          createdBy: 'owner',
+          title: id,
+          offerText:
+            id === 'own'
+              ? 'Central business bikes for 80 USD.'
+              : id === 'no-phone'
+                ? 'Office chairs for 50 USD.'
+                : id === 'camera'
+                  ? 'Camera for 1000000 IQD.'
+                  : id === 'flowers'
+                    ? 'Fresh flowers bouquet for 25 USD.'
+                    : 'New phones with 12 month warranty for 200 USD.',
+          locale: 'en',
+          status: 'complete',
+          networkEnabled: id !== 'private',
+          networkExpiresAt: new Date(Date.now() + (id === 'expired' ? -3600000 : 86400000)),
+        }),
+      ),
     );
     async function customer(id: string, status = 'accepted', expired = false) {
       await db.insert(schema.sharedProfiles).values({
@@ -283,6 +303,46 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
           1,
           'neither a replay nor another inquiry sends a second offer',
         );
+      },
+    );
+    await t.test(
+      'contextual first-offer requests use only that phone and its own offer history',
+      async () => {
+        const originalCount = count('repeat');
+        for (const [phone, request, expectedOffer] of [
+          ['other-phone', 'I want phones', /New phones/],
+          ['camera-phone', 'i want a camera please', /Camera for 1000000 IQD/],
+        ] as const) {
+          await customer(phone);
+          await inbound(phone, request);
+          await processRecommendations(5);
+          assert.equal(count(phone), 0, 'one inquiry still waits for repeated interest');
+          const latest = await inbound(phone, 'any offers for me?');
+          await processRecommendations(5);
+          const input = rankingInputs.find((item) => item.latestMessageId === latest.messageId)!;
+          assert.equal(input.previousTopic, null);
+          assert.deepEqual(input.waitingTopics, []);
+          assert.deepEqual(
+            input.messages.map((m) => m.body),
+            [request, 'any offers for me?'],
+          );
+          assert.equal(count(phone), 1);
+          assert.equal(sends.at(-1)!.to, phone);
+          assert.match(sends.at(-1)!.text.body, expectedOffer);
+          await processRecommendations(5);
+          assert.equal(count(phone), 1, 'the same request cannot send twice');
+        }
+        assert.equal(count('repeat'), originalCount, 'another phone does not send to the original');
+        await customer('no-context');
+        const latest = await inbound('no-context', 'any offers for me?');
+        await processRecommendations(5);
+        assert.equal(count('no-context'), 0, 'an offer request without a topic is not enough');
+        const [decision] = await db
+          .select()
+          .from(schema.recommendationJobs)
+          .where(eq(schema.recommendationJobs.triggerMessageId, latest.messageId));
+        assert.equal(decision.status, 'noMatch');
+        assert.ok(decision.reason, 'keep the decision reason for diagnosis');
       },
     );
     await t.test(

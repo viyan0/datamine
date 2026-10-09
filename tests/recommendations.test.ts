@@ -44,6 +44,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
   let ambiguous = false;
   let invalidId = false;
   let verboseReason = false;
+  let staleTopic = false;
   let duringRank: (() => Promise<void>) | null = null;
   let duringSend: (() => Promise<void>) | null = null;
   globalThis.fetch = async (url, init) => {
@@ -52,6 +53,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         mode: string;
         latestMessageId: string;
         previousTopic: string | null;
+        currentInterest: { value: string; messageId: string; quote: string } | null;
         waitingTopics: string[];
         blockedTopics: string[];
         messages: { id: string; body: string }[];
@@ -66,11 +68,14 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       const naturalMore =
         /another offer/i.test(latest.body) || (contextualFollowup && !!input.previousTopic);
       const topicRequest = contextualFollowup
-        ? input.messages.filter((m) => m.id !== latest.id).at(-1)?.body || ''
+        ? input.currentInterest?.value ||
+          input.messages.filter((m) => m.id !== latest.id).at(-1)?.body ||
+          ''
         : latest.body;
       const stopTopic = /stop phones offers/i.test(latest.body);
-      const topic =
-        input.mode === 'more' || naturalMore
+      const topic = staleTopic
+        ? 'phones'
+        : input.mode === 'more' || naturalMore
           ? input.previousTopic || ''
           : /camera/i.test(topicRequest)
             ? 'camera'
@@ -343,6 +348,61 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
           .where(eq(schema.recommendationJobs.triggerMessageId, latest.messageId));
         assert.equal(decision.status, 'noMatch');
         assert.ok(decision.reason, 'keep the decision reason for diagnosis');
+      },
+    );
+    await t.test(
+      'a generic follow-up cannot revive a superseded interest from the same phone',
+      async () => {
+        await customer('changed-topic');
+        await inbound('changed-topic', 'I want phones');
+        await processRecommendations(5);
+        const camera = await inbound('changed-topic', 'I want a camera');
+        await db
+          .update(schema.conversations)
+          .set({
+            analysis: {
+              result: {
+                language: 'en',
+                services: ['Cameras'],
+                intent: 'Camera purchase',
+                inquiryStatus: 'new',
+                summary: 'The latest interest is a camera.',
+                nextStep: 'Show camera offers.',
+                reviewNote: null,
+                facts: [],
+                stopOffers: null,
+                subject: { value: 'camera', messageId: camera.messageId, quote: 'I want a camera' },
+              },
+              model: 'test',
+              version: 5,
+              locale: 'en',
+              createdAt: new Date().toISOString(),
+              sourceHash: 'test',
+              sourceMessageIds: [camera.messageId],
+              inputTokens: 0,
+              outputTokens: 0,
+              latencyMs: 0,
+            },
+          })
+          .where(eq(schema.conversations.id, 'changed-topic'));
+        await processRecommendations(5);
+        assert.equal(count('changed-topic'), 0);
+        await inbound('changed-topic', 'any offers for me?');
+        staleTopic = true;
+        try {
+          await processRecommendations(5);
+        } finally {
+          staleTopic = false;
+        }
+        assert.equal(
+          count('changed-topic'),
+          0,
+          'reject an AI choice evidenced only by the older topic',
+        );
+        await inbound('changed-topic', 'any offers for me?');
+        await processRecommendations(5);
+        assert.equal(count('changed-topic'), 1);
+        assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
       },
     );
     await t.test(

@@ -304,6 +304,25 @@ export const profileEvents = pgTable('profile_events', {
   channel: text('channel').default('customer_portal').notNull(),
   createdAt: createdAt(),
 });
+// One platform-wide row; a missing row means the defaults below.
+export const platformSettings = pgTable(
+  'platform_settings',
+  {
+    id: text('id').primaryKey(),
+    businessChatOffers: text('business_chat_offers')
+      .$type<'immediate' | 'businessFirst'>()
+      .default('immediate')
+      .notNull(),
+    updatedBy: text('updated_by').references(() => user.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check(
+      'platform_settings_business_chat_offers',
+      sql`${t.businessChatOffers} IN ('immediate', 'businessFirst')`,
+    ),
+  ],
+);
 export const products = pgTable(
   'products',
   {
@@ -413,7 +432,7 @@ export const recommendationJobs = pgTable(
       .notNull()
       .unique()
       .references(() => messages.id),
-    mode: text('mode').$type<'interest' | 'more' | 'stop' | 'response'>().notNull(),
+    mode: text('mode').$type<'interest' | 'more' | 'stop' | 'response' | 'followUp'>().notNull(),
     waitingForOffer: boolean('waiting_for_offer').default(false).notNull(),
     noticeMessageId: text('notice_message_id').references(() => messages.id),
     offerCheckHash: text('offer_check_hash'),

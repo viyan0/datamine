@@ -39,6 +39,7 @@ import { BusinessSettings } from './business-settings';
 import { Campaigns } from './campaigns';
 import { Products } from './products';
 import { CentralWhatsapp } from './central-whatsapp';
+import { OfferFollowUpSettings } from './offer-follow-up-settings';
 import { AgencyInbox } from './inbox';
 import { DashboardCharts } from './dashboard-charts';
 
@@ -416,6 +417,7 @@ export function Dashboard({
             <div className="page-stack">
               <div className="connections-overview">
                 <CentralWhatsapp data={data} demo={demo} />
+                {data.user.platformAdmin && <OfferFollowUpSettings data={data} demo={demo} />}
                 <WebhookPanel demo={demo} admin={data.user.platformAdmin} />
               </div>
               {data.user.platformAdmin && data.connections.length > 0 && (

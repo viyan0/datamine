@@ -19,6 +19,7 @@ import { ingestWebhook } from '../src/lib/webhook';
 import { syncCustomerInterests } from '../src/lib/consent';
 import { centralConnection } from '../src/lib/central-whatsapp';
 import { createProduct, updateProduct } from '../src/lib/products';
+import { setBusinessChatOfferMode } from '../src/lib/platform-settings';
 
 test('automatic recommendations respect consent, one offer, more, topic stops and sender windows', async (t) => {
   const memory = await PGlite.create();
@@ -41,7 +42,10 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
     previousTopic: string | null;
     waitingTopics: string[];
     messages: { id: string; body: string }[];
+    offers: { id: string; text: string }[];
+    followUp: { situation: string; need: string } | null;
   }[] = [];
+  let fakeObjection = false;
   let ambiguous = false;
   let invalidId = false;
   let verboseReason = false;
@@ -77,6 +81,55 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
           ],
         });
       }
+      if (payload.classification === 'followUp') {
+        type Line = { id: string; from: string; body: string };
+        const lines: Line[] = payload.messages;
+        const customerLines = lines.filter((m) => m.from === 'customer');
+        const latest = customerLines.find((m) => m.id === payload.latestMessageId);
+        const objection = latest && /too expensive/i.test(latest.body) ? latest : undefined;
+        const request = customerLines.findLast((m) =>
+          /camera|bikes|chairs|flowers|phones/i.test(m.body),
+        );
+        const unmet = lines.some((m) => m.from !== 'customer' && /not available/i.test(m.body));
+        const situation = fakeObjection
+          ? 'objection'
+          : objection
+            ? 'objection'
+            : payload.check !== 'sixHours' || !request
+              ? 'none'
+              : !payload.businessReplied
+                ? 'unanswered'
+                : unmet
+                  ? 'unmet'
+                  : 'none';
+        const evidence = fakeObjection ? latest : objection || request;
+        const topic = request?.body.toLowerCase().match(/camera|bikes|chairs|flowers|phones/)?.[0];
+        const quoted = lines
+          .filter((m) => m.from !== 'customer')
+          .map((m) => m.body.match(/\d+/)?.[0])
+          .filter(Boolean)
+          .at(-1);
+        const followUp = situation !== 'none';
+        return Response.json({
+          model: 'anthropic/claude-haiku-5.5',
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: {
+                content: JSON.stringify({
+                  followUp,
+                  situation,
+                  need: followUp
+                    ? `${topic}${objection && quoted ? ` cheaper than ${quoted}` : ''}`
+                    : '',
+                  messageId: followUp ? evidence!.id : null,
+                  quote: !followUp ? null : fakeObjection ? 'too expensive' : evidence!.body,
+                }),
+              },
+            },
+          ],
+        });
+      }
       if (payload.validation === 'repeatedInterest') {
         const named = payload.evidence
           .map(
@@ -104,6 +157,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         blockedTopics: string[];
         messages: { id: string; body: string }[];
         offers: { id: string; text: string }[];
+        followUp: { situation: string; need: string } | null;
       };
       rankingInputs.push(input);
       assert.ok(
@@ -112,10 +166,12 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       const latest = input.messages.find((m) => m.id === input.latestMessageId)!;
       const contextualFollowup = latest.body === 'any offers for me?';
       const stopTopic = /stop phones offers/i.test(latest.body);
-      const requested = !stopTopic && (input.mode === 'more' || /offers?/i.test(latest.body));
+      const requested =
+        !stopTopic && (input.mode === 'more' || /offers?/i.test(latest.body) || !!input.followUp);
       const unnamed = !/camera|bikes|chairs|flowers|phones/i.test(latest.body);
       const topicRequest =
         input.requestedTopic ||
+        input.followUp?.need ||
         (unnamed
           ? input.currentInterest?.value ||
             input.messages.filter((m) => /camera|bikes|chairs|flowers|phones/i.test(m.body)).at(-1)
@@ -144,8 +200,12 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
             ((requested || contextualFollowup) && m.id === latest.id),
         )
         .map((m) => ({ messageId: m.id, quote: m.body }));
+      const limit = Number(input.followUp?.need.match(/cheaper than (\d+)/)?.[1] || Infinity);
       const offer = topic
-        ? input.offers.find((o) => o.text.toLowerCase().includes(topic))
+        ? input.offers.find(
+            (o) =>
+              o.text.toLowerCase().includes(topic) && !(Number(o.text.match(/\d+/)?.[0]) >= limit),
+          )
         : undefined;
       const eligible =
         !input.blockedTopics.includes(topic) && (requested || !input.waitingTopics.includes(topic));
@@ -222,6 +282,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       { id: 'origin', name: 'Original business', slug: 'origin' },
       { id: 'supplier', name: 'Supplier business', slug: 'supplier' },
       { id: 'no-whatsapp', name: 'Business without WhatsApp', slug: 'no-whatsapp' },
+      { id: 'retailer', name: 'Retail business', slug: 'retailer' },
     ]);
     await db.insert(schema.connections).values([
       {
@@ -244,6 +305,17 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         wabaId: '222',
         displayPhone: '+9647500000002',
         accessTokenEncrypted: encrypt('test', 'supplier-sender:token'),
+        appSecretEncrypted: 'unused',
+        verifiedAt: new Date(),
+      },
+      {
+        id: 'retailer-sender',
+        agencyId: 'retailer',
+        label: 'Retailer',
+        phoneNumberId: '24680',
+        wabaId: '333',
+        displayPhone: '+9647500000004',
+        accessTokenEncrypted: encrypt('test', 'retailer-sender:token'),
         appSecretEncrypted: 'unused',
         verifiedAt: new Date(),
       },
@@ -355,6 +427,52 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         raw,
         `sha256=${createHmac('sha256', 'test-secret').update(raw).digest('hex')}`,
       );
+    }
+    // A chat with a connected business that is not the central Datamine number.
+    async function retail(id: string, direction: 'inbound' | 'outbound', body: string, ageMs = 0) {
+      const messageId = randomUUID();
+      const providerTimestamp = new Date(Date.now() - ageMs);
+      await db
+        .insert(schema.conversations)
+        .values({
+          id: `${id}-retail`,
+          agencyId: 'retailer',
+          connectionId: 'retailer-sender',
+          contactPhone: id,
+          name: id,
+          lastInboundAt: providerTimestamp,
+          lastMessageAt: providerTimestamp,
+          analysisStatus: 'complete',
+        })
+        .onConflictDoNothing();
+      await db.insert(schema.messages).values({
+        id: messageId,
+        agencyId: 'retailer',
+        connectionId: 'retailer-sender',
+        direction,
+        contactPhone: id,
+        type: 'text',
+        body,
+        deliveryStatus: direction === 'outbound' ? 'delivered' : 'received',
+        providerTimestamp,
+      });
+      if (direction === 'inbound')
+        await db.transaction((tx) => scheduleRecommendation(tx, `${id}-retail`));
+      return messageId;
+    }
+    const jobFor = async (messageId: string) =>
+      (
+        await db
+          .select()
+          .from(schema.recommendationJobs)
+          .where(eq(schema.recommendationJobs.triggerMessageId, messageId))
+      )[0];
+    async function sixHoursLater(messageId: string) {
+      await db
+        .update(schema.recommendationJobs)
+        .set({ dueAt: new Date(Date.now() - 1000) })
+        .where(eq(schema.recommendationJobs.triggerMessageId, messageId));
+      await processRecommendations(10);
     }
     await t.test(
       'single inquiry sends none; repeat sends one supplier offer and waits',
@@ -1415,6 +1533,183 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       await processRecommendations(50);
       assert.equal(count('wait-template'), 3);
       await updateProduct({ id: 'owner', platformRole: 'admin' }, product.id, { active: false });
+    });
+    await t.test(
+      'too expensive after a Datamine offer gets one cheaper unseen offer',
+      async () => {
+        await customer('central-objection');
+        await inbound('central-objection', 'camera offers');
+        await processRecommendations(10);
+        assert.equal(count('central-objection'), 1);
+        assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
+        await db.insert(schema.campaigns).values({
+          id: 'retailer-camera',
+          agencyId: 'retailer',
+          createdBy: 'owner',
+          title: 'retailer-camera',
+          offerText: 'Retailer camera for 900000 IQD.',
+          locale: 'en',
+          status: 'complete',
+          networkEnabled: true,
+          networkExpiresAt: new Date(Date.now() + 86400000),
+        });
+        const objection = await inbound('central-objection', 'That is too expensive');
+        await processRecommendations(10);
+        assert.equal(count('central-objection'), 2);
+        assert.match(sends.at(-1)!.text.body, /Here is another option that may suit you better/);
+        assert.match(sends.at(-1)!.text.body, /Retailer camera for 900000 IQD/);
+        const input = rankingInputs.find((i) => i.latestMessageId === objection.messageId)!;
+        assert.equal(input.followUp?.situation, 'objection');
+        assert.match(input.followUp!.need, /cheaper than 1000000/);
+        await inbound('central-objection', 'Still too expensive');
+        await processRecommendations(10);
+        assert.equal(count('central-objection'), 2, 'nothing cheaper remains, so stay silent');
+      },
+    );
+    await t.test(
+      'a price objection in a business chat gets a cheaper offer from another business at once',
+      async () => {
+        await customer('objection');
+        const question = await retail('objection', 'inbound', 'How much is the camera?', 3000);
+        await processRecommendations(10);
+        assert.equal(count('objection'), 0, 'a price question is left to the business');
+        assert.equal((await jobFor(question)).mode, 'followUp');
+        await retail('objection', 'outbound', 'The camera costs 1500000 IQD.', 2000);
+        const trigger = await retail('objection', 'inbound', 'That is too expensive', 1000);
+        await processRecommendations(10);
+        assert.equal(count('objection'), 1);
+        assert.equal(sends.at(-1)!.to, 'objection');
+        assert.match(sends.at(-1)!.text.body, /Here is another option that may suit you better/);
+        assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
+        const input = rankingInputs.find((i) => i.latestMessageId === trigger)!;
+        assert.ok(
+          input.offers.every((o) => o.id !== 'retailer-camera'),
+          'never offer the business the customer just turned down',
+        );
+        const job = await jobFor(trigger);
+        assert.equal(job.mode, 'followUp');
+        assert.equal(job.status, 'accepted');
+        await sixHoursLater(question);
+        await processRecommendations(10);
+        assert.equal(count('objection'), 1, 'the earlier question was superseded');
+        assert.equal((await jobFor(question)).status, 'noMatch');
+      },
+    );
+    await t.test('an objection the customer did not write cannot start a follow-up', async () => {
+      await customer('fake-objection');
+      const trigger = await retail('fake-objection', 'inbound', 'Thanks, I will think about it');
+      fakeObjection = true;
+      try {
+        await processRecommendations(10);
+      } finally {
+        fakeObjection = false;
+      }
+      assert.equal(count('fake-objection'), 0);
+      assert.equal((await jobFor(trigger)).mode, 'followUp', 'still waits for the business');
+    });
+    await t.test(
+      'business-first mode waits six hours, then follows up an unanswered request once',
+      async () => {
+        await setBusinessChatOfferMode('businessFirst', 'owner');
+        try {
+          await customer('unanswered');
+          const trigger = await retail('unanswered', 'inbound', 'Any camera offers?');
+          await processRecommendations(10);
+          assert.equal(count('unanswered'), 0, 'even a direct request goes to the business first');
+          const deferred = await jobFor(trigger);
+          const [message] = await db
+            .select()
+            .from(schema.messages)
+            .where(eq(schema.messages.id, trigger));
+          assert.equal(deferred.mode, 'followUp');
+          assert.equal(deferred.status, 'pending');
+          assert.equal(
+            deferred.dueAt!.getTime() - message.providerTimestamp.getTime(),
+            6 * 3600000,
+          );
+          await sixHoursLater(trigger);
+          assert.equal(count('unanswered'), 1);
+          assert.match(sends.at(-1)!.text.body, /Still looking\? Here is another option/);
+          assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
+          assert.doesNotMatch(sends.at(-1)!.text.body, /Retailer camera/);
+          await sixHoursLater(trigger);
+          assert.equal(count('unanswered'), 1, 'one follow-up per request');
+        } finally {
+          await setBusinessChatOfferMode('immediate', 'owner');
+        }
+      },
+    );
+    await t.test(
+      'business replies and newer messages decide the six-hour follow-up',
+      async () => {
+        await setBusinessChatOfferMode('businessFirst', 'owner');
+        try {
+          await customer('answered');
+          const answered = await retail('answered', 'inbound', 'Do you have bikes?', 2000);
+          await processRecommendations(10);
+          await retail('answered', 'outbound', 'Yes, bikes are 80 USD in store.', 1000);
+          await sixHoursLater(answered);
+          assert.equal(count('answered'), 0, 'the business answered and the customer is deciding');
+          assert.equal((await jobFor(answered)).status, 'noMatch');
+
+          await customer('unmet');
+          const unmet = await retail('unmet', 'inbound', 'Do you have chairs?', 2000);
+          await processRecommendations(10);
+          await retail('unmet', 'outbound', 'Sorry, chairs are not available.', 1000);
+          await sixHoursLater(unmet);
+          assert.equal(count('unmet'), 1, 'the business could not provide it');
+          assert.match(sends.at(-1)!.text.body, /chairs/i);
+
+          await customer('moved-clock');
+          const first = await retail('moved-clock', 'inbound', 'Any phones offers?', 2000);
+          await processRecommendations(10);
+          const second = await retail('moved-clock', 'inbound', 'Hello?', 1000);
+          await processRecommendations(10);
+          await sixHoursLater(first);
+          assert.equal(count('moved-clock'), 0, 'a newer customer message restarts the wait');
+          assert.equal((await jobFor(first)).status, 'noMatch');
+          await sixHoursLater(second);
+          assert.equal(count('moved-clock'), 1);
+          assert.match(sends.at(-1)!.text.body, /New phones/);
+        } finally {
+          await setBusinessChatOfferMode('immediate', 'owner');
+        }
+      },
+    );
+    await t.test(
+      'immediate mode follows up a business request that received no offer',
+      async () => {
+        await customer('immediate-follow-up');
+        const trigger = await retail('immediate-follow-up', 'inbound', 'I want flowers');
+        await processRecommendations(10);
+        assert.equal(count('immediate-follow-up'), 0, 'one interest is not enough to send');
+        assert.equal((await jobFor(trigger)).status, 'pending');
+        await sixHoursLater(trigger);
+        assert.equal(count('immediate-follow-up'), 1);
+        assert.match(sends.at(-1)!.text.body, /Fresh flowers/);
+        await db
+          .update(schema.campaigns)
+          .set({ networkEnabled: false })
+          .where(eq(schema.campaigns.id, 'retailer-camera'));
+      },
+    );
+    await t.test('business-first mode applies a named topic stop without waiting six hours', async () => {
+      await setBusinessChatOfferMode('businessFirst', 'owner');
+      try {
+        await customer('business-stop');
+        const trigger = await retail('business-stop', 'inbound', 'stop phones offers');
+        await processRecommendations(10);
+        const [profile] = await db
+          .select()
+          .from(schema.sharedProfiles)
+          .where(eq(schema.sharedProfiles.id, 'business-stop'));
+        assert.deepEqual(profile.blockedTopics, ['phones']);
+        assert.equal((await jobFor(trigger)).mode, 'stop');
+        assert.equal(count('business-stop'), 1, 'only the stop acknowledgement is sent');
+        assert.match(sends.at(-1)!.text.body, /phones.*stopped/i);
+      } finally {
+        await setBusinessChatOfferMode('immediate', 'owner');
+      }
     });
     await t.test('named topic stop does not depend on an available offer catalog', async () => {
       await db.update(schema.campaigns).set({ networkEnabled: false });

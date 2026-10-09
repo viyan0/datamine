@@ -99,6 +99,13 @@
       "when": 1791551000000,
       "tag": "0013_business_consent_offer_media",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791552000000,
+      "tag": "0014_offer_follow_ups",
+      "breakpoints": true
     }
   ]
 }

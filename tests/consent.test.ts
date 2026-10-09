@@ -101,6 +101,8 @@ test('one WhatsApp consent connects AI interests to existing offers; decline pur
     let result;
     if (source.classification === 'offerRequest')
       result = { offerRequest: /offers/i.test(source.latestMessage) };
+    else if (source.classification === 'followUp')
+      result = { followUp: false, situation: 'none', need: '', messageId: null, quote: null };
     else if (source.latestMessageId) {
       result = {
         action: 'request',

@@ -24,6 +24,11 @@ import { GET as offers, POST as createOffer } from '../src/app/api/campaigns/rou
 import { POST as changeOffer } from '../src/app/api/campaigns/[id]/route';
 import { GET as products, POST as createProduct } from '../src/app/api/products/route';
 import { PATCH as updateProduct } from '../src/app/api/products/[id]/route';
+import {
+  GET as platformSettings,
+  POST as savePlatformSettings,
+} from '../src/app/api/platform-settings/route';
+import { businessChatOfferMode } from '../src/lib/platform-settings';
 import type { ProductView } from '../src/lib/product-types';
 
 // Real request cookies and route guards, without starting a second Next dev build.
@@ -68,6 +73,8 @@ async function dispatch(request: NextRequest) {
       if (url.pathname === '/api/invitations') return invite(request);
       if (url.pathname === '/api/invitations/accept') return accept(request);
       if (url.pathname === '/api/customers') return customers();
+      if (url.pathname === '/api/platform-settings')
+        return request.method === 'GET' ? platformSettings() : savePlatformSettings(request);
       if (url.pathname === '/api/products')
         return request.method === 'GET' ? products() : createProduct(request);
       const productId = url.pathname.match(/^\/api\/products\/([^/]+)$/)?.[1];
@@ -555,6 +562,22 @@ test('HTTP business setup and campaign permissions use real authenticated sessio
         assert.equal(manualCopy.catalogOnly, false);
       },
     );
+    await t.test('only the central administrator switches business chat offers', async () => {
+      const mode = { businessChatOffers: 'businessFirst' };
+      assert.equal((await call('/api/platform-settings', '', mode)).status, 401);
+      assert.equal((await call('/api/platform-settings', owner, mode)).status, 403);
+      assert.equal((await call('/api/platform-settings', owner)).status, 403);
+      assert.equal(
+        (await call('/api/platform-settings', central, { businessChatOffers: 'sometimes' })).status,
+        400,
+      );
+      assert.deepEqual(await (await call('/api/platform-settings', central)).json(), {
+        businessChatOffers: 'immediate',
+      });
+      assert.equal((await call('/api/platform-settings', central, mode)).status, 200);
+      assert.equal(await businessChatOfferMode(), 'businessFirst');
+      assert.deepEqual(await (await call('/api/platform-settings', central)).json(), mode);
+    });
   } finally {
     globalThis.fetch = originalFetch;
     await new Promise<void>((resolve) => server.close(() => resolve()));

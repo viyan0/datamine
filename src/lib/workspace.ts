@@ -11,10 +11,13 @@ import {
 } from '@/db/schema';
 import { activityDays, type DashboardAnalytics } from './dashboard-analytics';
 import { centralConnection } from './central-whatsapp';
+import { businessChatOfferMode } from './platform-settings';
+import type { BusinessChatOfferMode } from './offer-follow-up-types';
 
 export type WorkspaceData = {
   user: { name: string; email: string; platformAdmin: boolean };
   centralWhatsapp?: { id: string; label: string; displayPhone: string } | null;
+  businessChatOffers?: BusinessChatOfferMode;
   agencies: {
     id: string;
     name: string;
@@ -61,6 +64,8 @@ export async function loadWorkspace(
   const centralWhatsapp = central
     ? { id: central.id, label: central.label, displayPhone: central.displayPhone }
     : null;
+  const businessChatOffers =
+    current.platformRole === 'admin' ? await businessChatOfferMode() : undefined;
   const agencyRows = await db
     .select({
       id: agencies.id,
@@ -89,6 +94,7 @@ export async function loadWorkspace(
     return {
       user: own,
       centralWhatsapp,
+      businessChatOffers,
       agencies: [],
       connections: [],
       members: [],
@@ -152,6 +158,7 @@ export async function loadWorkspace(
   return {
     user: own,
     centralWhatsapp,
+    businessChatOffers,
     agencies: agencyRows.map((a) => ({ ...a, createdAt: a.createdAt.toISOString() })),
     connections: connectionRows.map((c) => ({
       ...c,

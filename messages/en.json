@@ -600,6 +600,17 @@
     "saving": "Saving…",
     "save": "Use this number"
   },
+  "offerFollowUps": {
+    "title": "Offers in business chats",
+    "description": "In both modes, Datamine sends one better-matching offer from the central number when a business leaves a request unanswered for {hours} hours or cannot provide it, or when the customer turns the deal down, for example as too expensive.",
+    "mode": "When a customer asks a business",
+    "immediate": "Send offers immediately",
+    "businessFirst": "Business answers first",
+    "immediateHelp": "Direct offer requests in business chats get a Datamine offer straight away. Requests that get no offer are checked again after {hours} hours.",
+    "businessFirstHelp": "Datamine stays quiet in business chats for {hours} hours. It steps in earlier only when the customer turns the deal down.",
+    "saving": "Saving…",
+    "save": "Save"
+  },
   "catalogTitle": "Offers",
   "manage": "Manage",
   "offersSub": "Your offer catalog. Active offers are recommended to matching customers automatically."

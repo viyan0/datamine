@@ -46,7 +46,6 @@ const nav = [
   { key: 'customers', icon: Users },
   { key: 'campaigns', icon: Megaphone },
   { key: 'agencies', icon: Building2 },
-  { key: 'team', icon: Users },
   { key: 'connections', icon: MessageCircle },
   { key: 'settings', icon: Settings2 },
 ];

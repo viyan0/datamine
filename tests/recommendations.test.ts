@@ -45,10 +45,46 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
   let invalidId = false;
   let verboseReason = false;
   let staleTopic = false;
+  let mixedTopicEvidence = false;
+  let wrongRequestAction = false;
   let duringRank: (() => Promise<void>) | null = null;
   let duringSend: (() => Promise<void>) | null = null;
   globalThis.fetch = async (url, init) => {
     if (String(url) === 'https://openrouter.ai/api/v1/chat/completions') {
+      const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
+      if (payload.classification === 'offerRequest') {
+        return Response.json({
+          model: 'anthropic/claude-haiku-5.5',
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: {
+                content: JSON.stringify({
+                  offerRequest:
+                    /offers?/i.test(payload.latestMessage) && !/stop/i.test(payload.latestMessage),
+                }),
+              },
+            },
+          ],
+        });
+      }
+      if (payload.validation === 'repeatedInterest') {
+        const named = payload.evidence
+          .map(
+            (e: { quote: string }) =>
+              e.quote.toLowerCase().match(/phones|camera|bikes|chairs|flowers/)?.[0],
+          )
+          .filter(Boolean);
+        return Response.json({
+          model: 'anthropic/claude-haiku-5.5',
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: { content: JSON.stringify({ sameTopic: new Set(named).size === 1 }) },
+            },
+          ],
+        });
+      }
       const input = JSON.parse(JSON.parse(String(init?.body)).messages[1].content) as {
         mode: string;
         latestMessageId: string;
@@ -65,36 +101,42 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       );
       const latest = input.messages.find((m) => m.id === input.latestMessageId)!;
       const contextualFollowup = latest.body === 'any offers for me?';
-      const naturalMore =
-        /another offer/i.test(latest.body) || (contextualFollowup && !!input.previousTopic);
-      const topicRequest = contextualFollowup
+      const stopTopic = /stop phones offers/i.test(latest.body);
+      const requested = !stopTopic && (input.mode === 'more' || /offers?/i.test(latest.body));
+      const unnamed = !/camera|bikes|chairs|flowers|phones/i.test(latest.body);
+      const topicRequest = unnamed
         ? input.currentInterest?.value ||
-          input.messages.filter((m) => m.id !== latest.id).at(-1)?.body ||
+          input.messages.filter((m) => /camera|bikes|chairs|flowers|phones/i.test(m.body)).at(-1)
+            ?.body ||
+          input.previousTopic ||
           ''
         : latest.body;
-      const stopTopic = /stop phones offers/i.test(latest.body);
       const topic = staleTopic
         ? 'phones'
-        : input.mode === 'more' || naturalMore
-          ? input.previousTopic || ''
-          : /camera/i.test(topicRequest)
-            ? 'camera'
-            : /bikes/i.test(topicRequest)
-              ? 'bikes'
-              : /chairs/i.test(topicRequest)
-                ? 'chairs'
-                : /flowers/i.test(topicRequest)
-                  ? 'flowers'
-                  : 'phones';
+        : /camera/i.test(topicRequest)
+          ? 'camera'
+          : /bikes/i.test(topicRequest)
+            ? 'bikes'
+            : /chairs/i.test(topicRequest)
+              ? 'chairs'
+              : /flowers/i.test(topicRequest)
+                ? 'flowers'
+                : /phones/i.test(topicRequest)
+                  ? 'phones'
+                  : '';
       const evidence = input.messages
         .filter(
-          (m) => m.body.toLowerCase().includes(topic) || (contextualFollowup && m.id === latest.id),
+          (m) =>
+            mixedTopicEvidence ||
+            (!!topic && m.body.toLowerCase().includes(topic)) ||
+            ((requested || contextualFollowup) && m.id === latest.id),
         )
         .map((m) => ({ messageId: m.id, quote: m.body }));
-      const offer = input.offers.find((o) => o.text.toLowerCase().includes(topic));
+      const offer = topic
+        ? input.offers.find((o) => o.text.toLowerCase().includes(topic))
+        : undefined;
       const eligible =
-        !input.blockedTopics.includes(topic) &&
-        (input.mode === 'more' || naturalMore || !input.waitingTopics.includes(topic));
+        !input.blockedTopics.includes(topic) && (requested || !input.waitingTopics.includes(topic));
       if (duringRank) {
         const work = duringRank;
         duringRank = null;
@@ -109,18 +151,19 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
               content: JSON.stringify({
                 action: stopTopic
                   ? 'stopTopic'
-                  : input.mode === 'more' || naturalMore
-                    ? 'more'
+                  : requested && !wrongRequestAction
+                    ? 'request'
                     : 'interest',
-                topic: stopTopic ? 'phones' : eligible && offer ? topic : null,
+                topic: stopTopic
+                  ? 'phones'
+                  : requested || (eligible && offer)
+                    ? topic || null
+                    : null,
                 offerId: invalidId ? 'invented' : eligible && offer ? offer.id : null,
                 reason: verboseReason
                   ? 'This option matches the requested product and stated budget. '.repeat(8)
                   : 'Matches the requested product.',
-                evidence:
-                  stopTopic || naturalMore
-                    ? [{ messageId: latest.id, quote: latest.body }]
-                    : evidence,
+                evidence: stopTopic ? [{ messageId: latest.id, quote: latest.body }] : evidence,
               }),
             },
           },
@@ -341,12 +384,14 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         await customer('no-context');
         const latest = await inbound('no-context', 'any offers for me?');
         await processRecommendations(5);
-        assert.equal(count('no-context'), 0, 'an offer request without a topic is not enough');
+        assert.equal(count('no-context'), 1, 'ask for the topic instead of staying silent');
+        assert.match(sends.at(-1)!.text.body, /Which product or service/);
         const [decision] = await db
           .select()
           .from(schema.recommendationJobs)
           .where(eq(schema.recommendationJobs.triggerMessageId, latest.messageId));
-        assert.equal(decision.status, 'noMatch');
+        assert.equal(decision.status, 'accepted');
+        assert.equal(decision.mode, 'response');
         assert.ok(decision.reason, 'keep the decision reason for diagnosis');
       },
     );
@@ -385,7 +430,12 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
             },
           })
           .where(eq(schema.conversations.id, 'changed-topic'));
-        await processRecommendations(5);
+        mixedTopicEvidence = true;
+        try {
+          await processRecommendations(5);
+        } finally {
+          mixedTopicEvidence = false;
+        }
         assert.equal(count('changed-topic'), 0);
         await inbound('changed-topic', 'any offers for me?');
         staleTopic = true;
@@ -402,6 +452,45 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         await inbound('changed-topic', 'any offers for me?');
         await processRecommendations(5);
         assert.equal(count('changed-topic'), 1);
+        assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
+      },
+    );
+    await t.test(
+      'an explicit offer request needs no repetition and exhausted MORE gets one reply',
+      async () => {
+        await customer('direct-request');
+        await inbound('direct-request', 'What camera offers do you have?');
+        wrongRequestAction = true;
+        try {
+          await processRecommendations(5);
+        } finally {
+          wrongRequestAction = false;
+        }
+        assert.equal(count('direct-request'), 1);
+        assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
+        await inbound('direct-request', 'more offers');
+        await processRecommendations(5);
+        assert.equal(count('direct-request'), 2);
+        assert.match(sends.at(-1)!.text.body, /No more matching offers for camera/);
+        await processRecommendations(5);
+        assert.equal(count('direct-request'), 2, 'no duplicate offer or empty-result reply');
+      },
+    );
+    await t.test(
+      'MORE after a new topic requests that topic, not the last sent offer topic',
+      async () => {
+        await customer('switch-before-more');
+        await inbound('switch-before-more', 'Any phones offers?');
+        await processRecommendations(5);
+        assert.equal(count('switch-before-more'), 1);
+        const first = sends.at(-1)!.text.body;
+        await inbound('switch-before-more', 'I want a camera');
+        await processRecommendations(5);
+        assert.equal(count('switch-before-more'), 1);
+        await inbound('switch-before-more', 'more offers');
+        await processRecommendations(5);
+        assert.equal(count('switch-before-more'), 2);
+        assert.match(first, /New phones/);
         assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
       },
     );

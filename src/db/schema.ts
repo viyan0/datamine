@@ -396,7 +396,7 @@ export const recommendationJobs = pgTable(
       .notNull()
       .unique()
       .references(() => messages.id),
-    mode: text('mode').$type<'interest' | 'more' | 'stop'>().notNull(),
+    mode: text('mode').$type<'interest' | 'more' | 'stop' | 'response'>().notNull(),
     status: text('status').default('pending').notNull(),
     sourceRevision: integer('source_revision').notNull(),
     profileUpdatedAt: timestamp('profile_updated_at', { withTimezone: true }).notNull(),

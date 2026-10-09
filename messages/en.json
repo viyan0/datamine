@@ -185,7 +185,11 @@
     "templateChanged": "The approved template changed. Choose a current template before sending.",
     "audienceChanged": "Customer preferences changed. Matching is running again automatically.",
     "audienceEmpty": "No eligible customers match this offer yet.",
-    "audienceLimit": "This demo supports up to 100 eligible customers per language."
+    "audienceLimit": "This demo supports up to 100 eligible customers per language.",
+    "metaTokenExpired": "The WhatsApp connection has expired. Update its access token to continue.",
+    "metaTemplatePermission": "This WhatsApp connection does not have permission to manage templates.",
+    "templateSubmitFailed": "Meta could not accept this template. Check the message and try again.",
+    "templateSubmissionUnknown": "Meta did not confirm the submission. Try submitting the same text again; Datamine checks for an existing template first."
   },
   "networkLabel": "THE DATAMINE NETWORK",
   "agencyCount": "{count} businesses, one connected workspace",
@@ -469,9 +473,9 @@
     "empty": "Your next offer starts here",
     "emptyHint": "Submit a product, service, or promotion for automatic matching.",
     "demoDraftHint": "This is a saved sample draft. New matching needs a connected AI account; the prepared example shows how results look.",
-    "template": "Approved WhatsApp message",
-    "chooseTemplate": "Choose an approved template",
-    "templateHint": "Simple marketing templates in this offer’s language, from the first 100 templates. Choosing one automatically matches the exact message below.",
+    "template": "WhatsApp template",
+    "chooseTemplate": "Choose a template",
+    "templateHint": "Choose an existing message or create one here. Approval status refreshes automatically. Simple text templates in this offer’s language are shown (first 100).",
     "messagePreview": "The message customers will receive",
     "audienceTitle": "Why this offer fits",
     "matchingHint": "Haiku is finding relevant customers automatically. This page updates when ready.",
@@ -487,6 +491,28 @@
     "title": "Offer title",
     "offerText": "Offer details",
     "language": "Offer language",
-    "submit": "Submit offer"
+    "submit": "Submit offer",
+    "createTemplate": "Create template with AI",
+    "templateChecking": "Checking approval",
+    "templateStatus": "Meta status: {status}",
+    "templatePendingHint": "Approval is checked automatically. You can send after Meta approves.",
+    "templateSenderHint": "Connect a Datamine sender to create templates.",
+    "templateDraftHint": "Haiku drafts a message from this offer. Check the wording and make any changes before submitting.",
+    "templateMessage": "Message to customers",
+    "templateDrafting": "Haiku is writing your template…",
+    "templateSubmitting": "Submitting to Meta…",
+    "templateReviewHint": "Meta reviews marketing templates. This submits the template for approval; it does not send a message to customers.",
+    "submitTemplate": "Submit for Meta approval",
+    "templateStatuses": {
+      "APPROVED": "Approved",
+      "PENDING": "In review",
+      "REJECTED": "Rejected",
+      "PAUSED": "Paused",
+      "DISABLED": "Disabled",
+      "IN_APPEAL": "Under appeal",
+      "PENDING_DELETION": "Being deleted",
+      "DELETED": "Deleted",
+      "LIMIT_EXCEEDED": "Limit reached"
+    }
   }
 }

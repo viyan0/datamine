@@ -15,6 +15,8 @@ import { requestHaiku, analysisConfigured } from './anthropic';
 import { analysisModel } from './analysis-types';
 import { decrypt } from './security';
 import { approvedTemplates, sendMetaTemplate } from './meta';
+import { marketingTemplates } from './meta-templates';
+import type { ApprovedTemplate } from './template-types';
 import type { CampaignView } from './campaign-types';
 
 type Campaign = typeof campaigns.$inferSelect;
@@ -116,7 +118,7 @@ export async function senderTemplates() {
   if (!sender) return { sender: null, templates: [] };
   return {
     sender: { id: sender.id, label: sender.label, displayPhone: sender.displayPhone },
-    templates: await approvedTemplates(
+    templates: await marketingTemplates(
       sender.wabaId,
       decrypt(sender.accessTokenEncrypted, `${sender.id}:token`),
     ),
@@ -125,12 +127,19 @@ export async function senderTemplates() {
 export async function prepareTemplate(id: string, templateId: string) {
   const sender = await campaignSender();
   if (!sender) throw new HttpError(409, 'campaignSenderMissing');
-  const templates = await approvedTemplates(
+  const templates = await marketingTemplates(
     sender.wabaId,
     decrypt(sender.accessTokenEncrypted, `${sender.id}:token`),
   );
   const template = templates.find((t) => t.id === templateId);
   if (!template) throw new HttpError(422, 'templateUnavailable');
+  await attachCampaignTemplate(id, template, sender.id);
+}
+export async function attachCampaignTemplate(
+  id: string,
+  template: ApprovedTemplate,
+  senderId: string,
+) {
   const [c] = await getDb().select().from(campaigns).where(eq(campaigns.id, id));
   if (!c || !['ready', 'matching', 'error'].includes(c.status))
     throw new HttpError(409, 'campaignLocked');
@@ -140,7 +149,7 @@ export async function prepareTemplate(id: string, templateId: string) {
     .update(campaigns)
     .set({
       template,
-      senderId: sender.id,
+      senderId,
       analysis: null,
       status: 'matching',
       dueAt: new Date(),

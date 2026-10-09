@@ -6,7 +6,8 @@ import { Button } from './ui/button';
 import { Dialog } from './dialog';
 import type { WorkspaceData } from '@/lib/workspace';
 import type { CampaignView } from '@/lib/campaign-types';
-import type { ApprovedTemplate } from '@/lib/meta';
+import type { ManagedTemplate } from '@/lib/template-types';
+import { OfferTemplate } from './offer-template';
 import { demoCampaigns } from '@/lib/demo-campaigns';
 
 async function api(path: string, body?: unknown) {
@@ -32,7 +33,7 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
     [configured, setConfigured] = useState(demo);
   const [setup, setSetup] = useState<{
     sender: { id: string; label: string; displayPhone: string } | null;
-    templates: ApprovedTemplate[];
+    templates: ManagedTemplate[];
   }>({ sender: null, templates: [] });
   const [senderId, setSenderId] = useState(data.connections[0]?.id || ''),
     [setupError, setSetupError] = useState('');
@@ -68,16 +69,30 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
   }, [demo]);
   useEffect(() => {
     if (demo || !admin) return;
-    let active = true;
-    api('/api/campaigns/setup')
-      .then((s) => {
-        if (active) setSetup(s);
-      })
-      .catch((e) => {
-        if (active) setSetupError(e.message);
-      });
+    let active = true,
+      running = false;
+    const load = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const s = await api('/api/campaigns/setup');
+        if (active) {
+          setSetup(s);
+          setSetupError('');
+        }
+      } catch (e) {
+        if (active) setSetupError(e instanceof Error ? e.message : 'serverError');
+      } finally {
+        running = false;
+      }
+    };
+    void load();
+    const timer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 30000);
     return () => {
       active = false;
+      clearInterval(timer);
     };
   }, [demo, admin]);
   const current = items.find((c) => c.id === selected) || items[0];
@@ -211,16 +226,16 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
               {t('useSender')}
             </Button>
           </div>
-          {setupError && (
-            <p className="form-error" role="alert">
-              {errors.has(setupError) ? errors(setupError) : errors('serverError')}
-            </p>
-          )}
         </details>
       )}
       {error && (
         <p className="form-error" role="alert">
           {errors.has(error) ? errors(error) : errors('serverError')}
+        </p>
+      )}
+      {setupError && (
+        <p className="form-error" role="alert">
+          {errors.has(setupError) ? errors(setupError) : errors('serverError')}
         </p>
       )}
       <div className="campaign-layout">
@@ -267,31 +282,23 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
               {admin && (
                 <>
                   {!demo && !['sending', 'complete', 'cancelled'].includes(current.status) && (
-                    <label>
-                      {t('template')}
-                      <select
-                        value={current.template?.id || ''}
-                        disabled={busy}
-                        onChange={(e) => {
-                          if (e.target.value)
-                            void action({ action: 'template', templateId: e.target.value });
-                        }}
-                      >
-                        <option value="">{t('chooseTemplate')}</option>
-                        {setup.templates
-                          .filter(
-                            (p) =>
-                              p.language === current.locale ||
-                              p.language.startsWith(`${current.locale}_`),
-                          )
-                          .map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name} · {p.language}
-                            </option>
-                          ))}
-                      </select>
-                      <small>{t('templateHint')}</small>
-                    </label>
+                    <OfferTemplate
+                      key={current.id}
+                      campaign={current}
+                      templates={setup.templates}
+                      disabled={busy}
+                      connected={!!setup.sender && !setupError}
+                      onSelect={(templateId) => void action({ action: 'template', templateId })}
+                      onCreated={async () => {
+                        const [result, s] = await Promise.all([
+                          api('/api/campaigns'),
+                          api('/api/campaigns/setup'),
+                        ]);
+                        setItems(result.campaigns);
+                        setSetup(s);
+                        setSetupError('');
+                      }}
+                    />
                   )}
                   {current.template && (
                     <div className="campaign-message">
@@ -350,6 +357,10 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
                         busy ||
                         current.status !== 'ready' ||
                         !current.template ||
+                        (!demo &&
+                          (!!setupError ||
+                            setup.templates.find((p) => p.id === current.template?.id)?.status !==
+                              'APPROVED')) ||
                         !current.recipients?.length
                       }
                       onClick={() => action({ action: 'send' })}

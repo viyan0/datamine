@@ -1,4 +1,7 @@
 import { HttpError } from './access';
+import { marketingTemplates } from './meta-templates';
+import type { ApprovedTemplate } from './template-types';
+export type { ApprovedTemplate } from './template-types';
 async function sendMetaMessage(input: {
   phoneNumberId: string;
   accessToken: string;
@@ -52,7 +55,6 @@ export function sendMetaText(input: {
     content: { type: 'text', text: { preview_url: false, body: input.body } },
   });
 }
-export type ApprovedTemplate = { id: string; name: string; language: string; body: string };
 export function sendMetaTemplate(input: {
   phoneNumberId: string;
   accessToken: string;
@@ -72,47 +74,9 @@ export async function approvedTemplates(
   wabaId: string,
   accessToken: string,
 ): Promise<ApprovedTemplate[]> {
-  const version = process.env.META_GRAPH_VERSION || 'v23.0';
-  if (!/^v\d+\.0$/.test(version) || !/^\d+$/.test(wabaId))
-    throw new HttpError(422, 'templateUnavailable');
-  const response = await fetch(
-    `https://graph.facebook.com/${version}/${wabaId}/message_templates?fields=id,name,status,category,language,components&limit=100`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(15000),
-    },
-  );
-  if (!response.ok) throw new HttpError(502, 'templateUnavailable');
-  const data = (await response.json()) as {
-    data?: {
-      id: string;
-      name: string;
-      language: string;
-      status: string;
-      category: string;
-      components: { type: string; text?: string }[];
-    }[];
-  };
-  return (data.data || [])
-    .filter(
-      (t) =>
-        t.status === 'APPROVED' &&
-        t.category === 'MARKETING' &&
-        t.components.some((c) => c.type === 'BODY' && c.text) &&
-        t.components.every(
-          (c) =>
-            ['BODY', 'FOOTER'].includes(c.type) &&
-            typeof c.text === 'string' &&
-            !c.text.includes('{{'),
-        ),
-    )
-    .map((t) => ({
-      id: t.id,
-      name: t.name,
-      language: t.language,
-      body: t.components.map((c) => c.text).join('\n\n'),
-    }));
+  return (await marketingTemplates(wabaId, accessToken))
+    .filter((t) => t.status === 'APPROVED')
+    .map(({ id, name, language, body }) => ({ id, name, language, body }));
 }
 export async function verifyMetaNumber(input: {
   phoneNumberId: string;

@@ -9,6 +9,7 @@ import type { CampaignView } from '@/lib/campaign-types';
 import type { ManagedTemplate } from '@/lib/template-types';
 import { OfferTemplate } from './offer-template';
 import { demoCampaigns } from '@/lib/demo-campaigns';
+import { campaignReplyBody } from '@/lib/campaign-delivery';
 
 async function api(path: string, body?: unknown) {
   const r = await fetch(path, {
@@ -96,6 +97,21 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
     };
   }, [demo, admin]);
   const current = items.find((c) => c.id === selected) || items[0];
+  const approved =
+    !!current?.template &&
+    setup.templates.some(
+      (template) => template.id === current.template?.id && template.status === 'APPROVED',
+    );
+  const replyCount =
+    current?.recipients?.filter(
+      (person) => person.status === 'matched' && !!person.replyWindowExpiresAt,
+    ).length || 0;
+  const sendMode = approved ? 'template' : 'reply';
+  const showReply =
+    !demo &&
+    (current?.status === 'complete' || current?.status === 'sending'
+      ? current.deliveryMode === 'reply'
+      : !approved);
   async function action(body: unknown) {
     if (!current || busy) return;
     setBusy(true);
@@ -239,10 +255,11 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
         </p>
       )}
       <div className="campaign-layout">
-        <aside className="panel campaign-list">
+        <div className="campaign-list">
           {items.map((c) => (
             <button
               className={current?.id === c.id ? 'selected' : ''}
+              aria-pressed={current?.id === c.id}
               key={c.id}
               onClick={() => {
                 setSelected(c.id);
@@ -264,7 +281,7 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
               <p>{t('emptyHint')}</p>
             </div>
           )}
-        </aside>
+        </div>
         {current && (
           <section className="panel campaign-detail">
             <div className="panel-heading">
@@ -282,28 +299,55 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
               {admin && (
                 <>
                   {!demo && !['sending', 'complete', 'cancelled'].includes(current.status) && (
-                    <OfferTemplate
-                      key={current.id}
-                      campaign={current}
-                      templates={setup.templates}
-                      disabled={busy}
-                      connected={!!setup.sender && !setupError}
-                      onSelect={(templateId) => void action({ action: 'template', templateId })}
-                      onCreated={async () => {
-                        const [result, s] = await Promise.all([
-                          api('/api/campaigns'),
-                          api('/api/campaigns/setup'),
-                        ]);
-                        setItems(result.campaigns);
-                        setSetup(s);
-                        setSetupError('');
-                      }}
-                    />
+                    <>
+                      {showReply && (
+                        <div
+                          className={`offer-readiness ${replyCount ? 'ready' : ''}`}
+                          role="status"
+                        >
+                          <MessageCircle size={20} />
+                          <div>
+                            <strong>
+                              {t(replyCount ? 'replyReady' : 'replyNeedsMessage', {
+                                count: replyCount,
+                              })}
+                            </strong>
+                            <p>
+                              {t(replyCount ? 'replyReadyHint' : 'replyNeedsMessageHint', {
+                                sender: current.replySenderLabel || t('sender'),
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      <details className="offer-template-tools">
+                        <summary>{t('templateTools')}</summary>
+                        <OfferTemplate
+                          key={current.id}
+                          campaign={current}
+                          templates={setup.templates}
+                          disabled={busy}
+                          connected={!!setup.sender && !setupError}
+                          onSelect={(templateId) => void action({ action: 'template', templateId })}
+                          onCreated={async () => {
+                            const [result, s] = await Promise.all([
+                              api('/api/campaigns'),
+                              api('/api/campaigns/setup'),
+                            ]);
+                            setItems(result.campaigns);
+                            setSetup(s);
+                            setSetupError('');
+                          }}
+                        />
+                      </details>
+                    </>
                   )}
-                  {current.template && (
+                  {(current.template || showReply) && (
                     <div className="campaign-message">
                       <strong>{t('messagePreview')}</strong>
-                      <p dir="auto">{current.template.body}</p>
+                      <p dir="auto">
+                        {showReply ? campaignReplyBody(current) : current.template?.body}
+                      </p>
                     </div>
                   )}
                   {current.analysis && (
@@ -347,6 +391,18 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
                         <span className="badge badge-neutral">
                           {t.has(r.status) ? t(r.status) : r.status}
                         </span>
+                        {showReply && r.status === 'matched' && (
+                          <small className="recipient-window">
+                            {r.replyWindowExpiresAt
+                              ? t('replyUntil', {
+                                  time: new Intl.DateTimeFormat(locale, {
+                                    dateStyle: 'short',
+                                    timeStyle: 'short',
+                                  }).format(new Date(r.replyWindowExpiresAt)),
+                                })
+                              : t('windowClosed')}
+                          </small>
+                        )}
                       </article>
                     ))}
                   </div>
@@ -356,17 +412,13 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
                       disabled={
                         busy ||
                         current.status !== 'ready' ||
-                        !current.template ||
-                        (!demo &&
-                          (!!setupError ||
-                            setup.templates.find((p) => p.id === current.template?.id)?.status !==
-                              'APPROVED')) ||
+                        (demo ? !current.template : !approved && replyCount === 0) ||
                         !current.recipients?.length
                       }
-                      onClick={() => action({ action: 'send' })}
+                      onClick={() => action({ action: 'send', mode: sendMode })}
                     >
                       <Send size={15} />
-                      {t(demo ? 'simulate' : 'send')}
+                      {t(demo ? 'simulate' : showReply ? 'sendReply' : 'send')}
                     </Button>
                     {!['complete', 'cancelled'].includes(current.status) && (
                       <Button

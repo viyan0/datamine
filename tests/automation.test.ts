@@ -45,6 +45,19 @@ test('queue wakeups respect retries and leases, recover sends, and stop when idl
     assert.ok(automationDelay(await due(false))! >= 89, 'recover orphaned sends after the lease');
     await db.exec("update messages set delivery_status = 'uncertain'");
     assert.equal(await due(), null, 'uncertain delivery is never automatically replayed');
+    await db.exec(`
+      insert into shared_profiles(id,phone,name,language,consent_version,consent_at)
+      values ('profile','test','Test','en','test',now());
+      insert into campaign_recipients(id,campaign_id,profile_id,profile_updated_at,reason,status)
+      values ('recipient','offer','profile',now(),'Relevant','uncertain');
+      update messages set type='text', request_id='recipient', delivery_status='submitting';
+    `);
+    assert.ok(
+      automationDelay(await due(false))! >= 89,
+      'recover a reply even if the processor stopped before linking its message',
+    );
+    await db.exec("update messages set delivery_status='uncertain'");
+    assert.equal(await due(), null);
     assert.equal(automationDelay(null), null);
   } finally {
     await db.close();

@@ -17,7 +17,9 @@ export const automationDueSql = `
     from campaign_recipients where status in ('queued', 'submitting')
     union all
     select created_at + interval '91 seconds' from messages
-    where type = 'template' and delivery_status = 'submitting'
+    where delivery_status = 'submitting' and (type = 'template' or exists (
+      select 1 from campaign_recipients r where r.id = messages.request_id
+    ))
     union all
     select now() from campaigns c where status = 'sending' and not exists (
       select 1 from campaign_recipients r where r.campaign_id = c.id

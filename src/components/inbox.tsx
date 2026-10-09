@@ -11,7 +11,6 @@ import {
   Search,
   Send,
   UserRound,
-  X,
 } from 'lucide-react';
 import type { WorkspaceData } from '@/lib/workspace';
 import { demoConversations, demoMessages } from '@/lib/demo-inbox';
@@ -25,6 +24,7 @@ import {
 import { Button } from './ui/button';
 import { EnrollmentLink } from './enrollment-link';
 import { ConversationAnalysis } from './conversation-analysis';
+import { Dialog } from './dialog';
 
 async function api(url: string, init?: RequestInit) {
   const response = await fetch(url, {
@@ -468,30 +468,28 @@ function ConversationView({
           )}
         </form>
       </section>
-      <aside className={`customer-pane ${details ? 'is-open' : ''}`}>
-        <div className="customer-heading">
-          <h2>{t('customerDetails')}</h2>
-          <button
-            className="icon-button customer-toggle"
-            aria-label={t('close')}
-            onClick={() => setDetails(false)}
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <CustomerForm
-          key={c.id}
-          conversation={c}
-          demo={demo}
-          editable={editable}
-          categories={categories}
-          url={url}
-          onUpdate={onUpdate}
-        />
-        {editable && (
-          <EnrollmentLink demo={demo} status={c.consentStatus} replyStatus={c.consentReplyStatus} />
-        )}
-      </aside>
+      {details && (
+        <Dialog title={t('customerDetails')} close={() => setDetails(false)}>
+          <div className="modal-body customer-details-modal">
+            <CustomerForm
+              key={c.id}
+              conversation={c}
+              demo={demo}
+              editable={editable}
+              categories={categories}
+              url={url}
+              onUpdate={onUpdate}
+            />
+            {editable && (
+              <EnrollmentLink
+                demo={demo}
+                status={c.consentStatus}
+                replyStatus={c.consentReplyStatus}
+              />
+            )}
+          </div>
+        </Dialog>
+      )}
     </>
   );
 }

@@ -300,6 +300,7 @@ export const campaigns = pgTable('campaigns', {
   locale: text('locale').notNull(),
   status: text('status').default('matching').notNull(),
   senderId: text('sender_id').references(() => connections.id),
+  deliveryMode: text('delivery_mode').$type<'template' | 'reply'>().default('template').notNull(),
   template: jsonb('template').$type<{ id: string; name: string; language: string; body: string }>(),
   analysis: jsonb('analysis').$type<{
     summary: string;

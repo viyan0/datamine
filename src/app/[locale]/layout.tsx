@@ -4,6 +4,7 @@ import { setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
 import '../globals.css';
+import '../workspace-theme.css';
 export const metadata: Metadata = {
   title: { default: 'Datamine — A workspace for every business', template: '%s · Datamine' },
   description: 'Bring your businesses, teams, and WhatsApp conversations together.',

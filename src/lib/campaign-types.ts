@@ -6,6 +6,8 @@ export type CampaignView = {
   offerText: string;
   locale: string;
   status: string;
+  deliveryMode?: 'template' | 'reply';
+  replySenderLabel?: string;
   createdAt: string;
   error: string | null;
   template: { id: string; name: string; language: string; body: string } | null;
@@ -17,5 +19,6 @@ export type CampaignView = {
     interests: string[];
     reason: string;
     status: string;
+    replyWindowExpiresAt?: string | null;
   }[];
 };

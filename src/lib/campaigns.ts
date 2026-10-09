@@ -9,18 +9,22 @@ import {
   connections,
   sharedProfiles,
   messages,
+  conversations,
 } from '@/db/schema';
 import { HttpError } from './access';
 import { requestHaiku, analysisConfigured } from './anthropic';
 import { analysisModel } from './analysis-types';
 import { decrypt } from './security';
-import { approvedTemplates, sendMetaTemplate } from './meta';
+import { approvedTemplates, sendMetaTemplate, sendMetaText } from './meta';
+import { replyWindowOpen } from './inbox-types';
+import { campaignReplyBody } from './campaign-delivery';
 import { marketingTemplates } from './meta-templates';
 import type { ApprovedTemplate } from './template-types';
 import type { CampaignView } from './campaign-types';
 
 type Campaign = typeof campaigns.$inferSelect;
 function sameTemplate(a: Campaign['template'] | undefined, b: Campaign['template']) {
+  if (!a && !b) return true;
   return (
     !!a &&
     !!b &&
@@ -62,6 +66,7 @@ function matchHash(c: Campaign, people: Awaited<ReturnType<typeof audience>>) {
 }
 export async function listCampaigns(agencyIds: string[], admin: boolean): Promise<CampaignView[]> {
   if (!admin && !agencyIds.length) return [];
+  const sender = admin ? await campaignSender() : null;
   const rows = await getDb()
     .select({ c: campaigns, agencyName: agencies.name })
     .from(campaigns)
@@ -78,6 +83,8 @@ export async function listCampaigns(agencyIds: string[], admin: boolean): Promis
       offerText: c.offerText,
       locale: c.locale,
       status: c.status,
+      deliveryMode: c.deliveryMode,
+      ...(admin && sender ? { replySenderLabel: sender.label } : {}),
       createdAt: c.createdAt.toISOString(),
       error: c.error,
       template: admin ? c.template : null,
@@ -95,10 +102,23 @@ export async function listCampaigns(agencyIds: string[], admin: boolean): Promis
                 interests: sharedProfiles.interests,
                 reason: campaignRecipients.reason,
                 status: sql<string>`coalesce(${messages.deliveryStatus}, ${campaignRecipients.status})`,
+                replyWindowExpiresAt: sql<
+                  string | null
+                >`case when ${conversations.lastInboundAt} <= now() and ${conversations.lastInboundAt} > now() - interval '24 hours' then to_char((${conversations.lastInboundAt} + interval '24 hours') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') end`,
               })
               .from(campaignRecipients)
               .innerJoin(sharedProfiles, eq(sharedProfiles.id, campaignRecipients.profileId))
               .leftJoin(messages, eq(messages.id, campaignRecipients.messageId))
+              .leftJoin(
+                conversations,
+                and(
+                  eq(conversations.contactPhone, sharedProfiles.phone),
+                  eq(
+                    conversations.connectionId,
+                    c.status === 'ready' ? sender?.id || '' : c.senderId || sender?.id || '',
+                  ),
+                ),
+              )
               .where(eq(campaignRecipients.campaignId, c.id)),
           }
         : {}),
@@ -254,20 +274,23 @@ export async function matchCampaign(id: string) {
       .where(and(eq(campaigns.id, id), eq(campaigns.runId, runId)));
   }
 }
-export async function launchCampaign(id: string) {
+export async function launchCampaign(id: string, mode: 'template' | 'reply' = 'template') {
   const db = getDb(),
     [c] = await db.select().from(campaigns).where(eq(campaigns.id, id));
-  if (!c || c.status !== 'ready' || !c.analysis || !c.template || !c.senderId)
-    throw new HttpError(409, 'campaignNotReady');
+  if (!c || c.status !== 'ready' || !c.analysis) throw new HttpError(409, 'campaignNotReady');
   const sender = await campaignSender();
-  if (!sender || sender.id !== c.senderId) throw new HttpError(409, 'campaignSenderMissing');
-  const currentTemplate = (
-    await approvedTemplates(
-      sender.wabaId,
-      decrypt(sender.accessTokenEncrypted, `${sender.id}:token`),
-    )
-  ).find((t) => t.id === c.template!.id);
-  if (!sameTemplate(currentTemplate, c.template)) throw new HttpError(409, 'templateChanged');
+  if (!sender || (mode === 'template' && sender.id !== c.senderId))
+    throw new HttpError(409, 'campaignSenderMissing');
+  if (mode === 'template') {
+    if (!c.template) throw new HttpError(409, 'campaignNotReady');
+    const currentTemplate = (
+      await approvedTemplates(
+        sender.wabaId,
+        decrypt(sender.accessTokenEncrypted, `${sender.id}:token`),
+      )
+    ).find((t) => t.id === c.template!.id);
+    if (!sameTemplate(currentTemplate, c.template)) throw new HttpError(409, 'templateChanged');
+  }
   if (matchHash(c, await audience(c)) !== c.analysis.sourceHash) {
     await db
       .update(campaigns)
@@ -278,18 +301,55 @@ export async function launchCampaign(id: string) {
   await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(campaigns).where(eq(campaigns.id, id)).for('update');
     if (
+      !locked ||
       locked.status !== 'ready' ||
       locked.analysis?.sourceHash !== c.analysis?.sourceHash ||
       !sameTemplate(locked.template, c.template)
     )
       throw new HttpError(409, 'campaignNotReady');
+    if (mode === 'reply') {
+      // A customer message opens a window only for the same connected sender.
+      const candidates = await tx
+        .select({
+          id: campaignRecipients.id,
+          lastInboundAt: conversations.lastInboundAt,
+        })
+        .from(campaignRecipients)
+        .innerJoin(sharedProfiles, eq(sharedProfiles.id, campaignRecipients.profileId))
+        .leftJoin(
+          conversations,
+          and(
+            eq(conversations.contactPhone, sharedProfiles.phone),
+            eq(conversations.connectionId, sender.id),
+          ),
+        )
+        .where(
+          and(eq(campaignRecipients.campaignId, id), eq(campaignRecipients.status, 'matched')),
+        );
+      const open = candidates.filter((p) => p.lastInboundAt && replyWindowOpen(p.lastInboundAt));
+      if (!open.length) throw new HttpError(409, 'campaignReplyWindowClosed');
+      const closed = candidates.filter((p) => !open.some((r) => r.id === p.id));
+      if (closed.length)
+        await tx
+          .update(campaignRecipients)
+          .set({ status: 'windowClosed' })
+          .where(
+            inArray(
+              campaignRecipients.id,
+              closed.map((p) => p.id),
+            ),
+          );
+    }
     const rows = await tx
       .update(campaignRecipients)
       .set({ status: 'queued' })
       .where(and(eq(campaignRecipients.campaignId, id), eq(campaignRecipients.status, 'matched')))
       .returning({ id: campaignRecipients.id });
     if (!rows.length) throw new HttpError(409, 'audienceEmpty');
-    await tx.update(campaigns).set({ status: 'sending' }).where(eq(campaigns.id, id));
+    await tx
+      .update(campaigns)
+      .set({ status: 'sending', senderId: sender.id, deliveryMode: mode, error: null })
+      .where(eq(campaigns.id, id));
   });
 }
 export async function cancelCampaign(id: string) {
@@ -332,29 +392,36 @@ export async function deliverRecipient(id: string) {
     const [initialSender] = initial.senderId
       ? await db.select().from(connections).where(eq(connections.id, initial.senderId))
       : [];
-    if (!initial.template || !initialSender || initial.status !== 'sending') {
+    if (
+      !person ||
+      (!initial.template && initial.deliveryMode !== 'reply') ||
+      !initialSender ||
+      initial.status !== 'sending'
+    ) {
       await db
         .update(campaignRecipients)
         .set({ status: 'cancelled' })
         .where(eq(campaignRecipients.id, id));
       return;
     }
-    const approved = (
-      await approvedTemplates(
-        initialSender.wabaId,
-        decrypt(initialSender.accessTokenEncrypted, `${initialSender.id}:token`),
-      )
-    ).find((t) => t.id === initial.template!.id);
-    if (!sameTemplate(approved, initial.template)) {
-      await db
-        .update(campaignRecipients)
-        .set({ status: 'cancelled' })
-        .where(eq(campaignRecipients.id, id));
-      await db
-        .update(campaigns)
-        .set({ error: 'templateChanged' })
-        .where(eq(campaigns.id, initial.id));
-      return;
+    if (initial.deliveryMode === 'template') {
+      const approved = (
+        await approvedTemplates(
+          initialSender.wabaId,
+          decrypt(initialSender.accessTokenEncrypted, `${initialSender.id}:token`),
+        )
+      ).find((t) => t.id === initial.template!.id);
+      if (!sameTemplate(approved, initial.template)) {
+        await db
+          .update(campaignRecipients)
+          .set({ status: 'cancelled' })
+          .where(eq(campaignRecipients.id, id));
+        await db
+          .update(campaigns)
+          .set({ error: 'templateChanged' })
+          .where(eq(campaigns.id, initial.id));
+        return;
+      }
     }
     const [message] = await db
       .insert(messages)
@@ -365,8 +432,9 @@ export async function deliverRecipient(id: string) {
         requestId: r.id,
         direction: 'outbound',
         contactPhone: person.phone,
-        type: 'template',
-        body: initial.template.body,
+        type: initial.deliveryMode === 'reply' ? 'text' : 'template',
+        body:
+          initial.deliveryMode === 'reply' ? campaignReplyBody(initial) : initial.template!.body,
         deliveryStatus: 'submitting',
         providerTimestamp: new Date(),
       })
@@ -391,7 +459,7 @@ export async function deliverRecipient(id: string) {
         : [];
       if (
         c.status !== 'sending' ||
-        !c.template ||
+        (!c.template && c.deliveryMode !== 'reply') ||
         !sender?.campaignSender ||
         !p ||
         p.status !== 'active' ||
@@ -409,14 +477,41 @@ export async function deliverRecipient(id: string) {
           .where(eq(messages.id, message.id));
         return;
       }
+      const [conversation] = await tx
+        .select()
+        .from(conversations)
+        .where(
+          and(eq(conversations.connectionId, sender.id), eq(conversations.contactPhone, p.phone)),
+        );
+      if (
+        c.deliveryMode === 'reply' &&
+        (!conversation || !replyWindowOpen(conversation.lastInboundAt))
+      ) {
+        await tx
+          .update(campaignRecipients)
+          .set({ status: 'windowClosed' })
+          .where(eq(campaignRecipients.id, id));
+        await tx
+          .update(messages)
+          .set({ deliveryStatus: 'windowClosed' })
+          .where(eq(messages.id, message.id));
+        await tx
+          .update(campaigns)
+          .set({ error: 'campaignReplyWindowClosed' })
+          .where(eq(campaigns.id, c.id));
+        return;
+      }
       // Locking the consent row serializes a simultaneous opt-out with the actual submission.
-      const result = await sendMetaTemplate({
+      const delivery = {
         phoneNumberId: sender.phoneNumberId,
         accessToken: decrypt(sender.accessTokenEncrypted, `${sender.id}:token`),
         to: p.phone,
         messageId: message.id,
-        template: c.template,
-      });
+      };
+      const result =
+        c.deliveryMode === 'reply'
+          ? await sendMetaText({ ...delivery, body: message.body! })
+          : await sendMetaTemplate({ ...delivery, template: c.template! });
       await tx
         .update(messages)
         .set({
@@ -428,6 +523,13 @@ export async function deliverRecipient(id: string) {
         .update(campaignRecipients)
         .set({ status: result.status, messageId: message.id })
         .where(eq(campaignRecipients.id, id));
+      if (conversation)
+        await tx
+          .update(conversations)
+          .set({
+            lastMessageAt: sql`greatest(${conversations.lastMessageAt}, ${message.providerTimestamp})`,
+          })
+          .where(eq(conversations.id, conversation.id));
     });
   } catch {
     await db
@@ -471,7 +573,10 @@ export async function processCampaigns() {
     .set({ deliveryStatus: 'uncertain' })
     .where(
       and(
-        eq(messages.type, 'template'),
+        or(
+          eq(messages.type, 'template'),
+          sql`exists (select 1 from campaign_recipients r where r.id=${messages.requestId})`,
+        ),
         eq(messages.deliveryStatus, 'submitting'),
         lt(messages.createdAt, new Date(Date.now() - 90000)),
       ),

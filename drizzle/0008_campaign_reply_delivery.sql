@@ -1,0 +1,1 @@
+ALTER TABLE "campaigns" ADD COLUMN "delivery_mode" text DEFAULT 'template' NOT NULL;

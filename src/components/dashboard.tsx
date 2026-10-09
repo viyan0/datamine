@@ -30,7 +30,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import type { WorkspaceData } from '@/lib/workspace';
-import { Brand, JourneyArt } from './brand';
+import { Brand } from './brand';
 import { Button } from './ui/button';
 import { LanguageSwitch } from './language-switch';
 import { WorkspaceForm, type FormKind } from './workspace-form';
@@ -172,6 +172,32 @@ export function Dashboard({
       {menu && (
         <button className="sidebar-scrim" aria-label={t('close')} onClick={() => setMenu(false)} />
       )}
+      <nav className="icon-rail" aria-label={t('workspace')}>
+        <Link className="rail-brand" href={root} aria-label="Datamine">
+          D
+        </Link>
+        {nav
+          .filter((item) => ['overview', 'inbox', 'campaigns', 'agencies'].includes(item.key))
+          .map(({ key, icon: Icon }) => (
+            <Link
+              key={key}
+              href={`${root}${key === 'overview' ? '' : `/${key}`}`}
+              className={`rail-link ${section === key ? 'selected' : ''}`}
+              aria-label={t(key)}
+              title={t(key)}
+            >
+              <Icon size={19} />
+            </Link>
+          ))}
+        <Link
+          className={`rail-link rail-settings ${section === 'settings' ? 'selected' : ''}`}
+          href={`${root}/settings`}
+          aria-label={t('settings')}
+          title={t('settings')}
+        >
+          <Settings2 size={19} />
+        </Link>
+      </nav>
       <aside className={`sidebar ${menu ? 'sidebar-open' : ''}`}>
         <div className="sidebar-brand">
           <Brand />
@@ -182,16 +208,6 @@ export function Dashboard({
           >
             <X size={18} />
           </button>
-        </div>
-        <div className="workspace-switch">
-          <span className="workspace-icon">
-            <Globe2 size={19} />
-          </span>
-          <div>
-            <strong>Datamine</strong>
-            <small>{t(demo ? 'demo' : 'liveWorkspace')}</small>
-          </div>
-          <ChevronRight size={15} />
         </div>
         <p className="nav-label">{t('workspace')}</p>
         <nav aria-label={t('workspace')}>
@@ -212,14 +228,6 @@ export function Dashboard({
             ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="phase-card">
-            <span className="phase-dot" />
-            <strong>{t('phaseFive')}</strong>
-            <p>{t('phaseCaption')}</p>
-            <div className="phase-track">
-              <span />
-            </div>
-          </div>
           <div className="user-card">
             <Avatar name={data.user.name} />
             <div>
@@ -257,10 +265,6 @@ export function Dashboard({
             <b>{t(section)}</b>
           </div>
           <div className="topbar-right">
-            <span className="pilot-tag">
-              <span className="small-dot" />
-              {t('phaseFive')}
-            </span>
             <LanguageSwitch />
           </div>
         </header>
@@ -276,11 +280,12 @@ export function Dashboard({
             </Link>
           </div>
         )}
-        <main className={`dashboard-content ${section === 'inbox' ? 'inbox-content' : ''}`}>
+        <main
+          className={`dashboard-content ${section === 'inbox' ? 'inbox-content' : section === 'overview' ? 'overview-content' : ''}`}
+        >
           <div className="page-heading">
             <div>
-              <p className="eyebrow">{t(section === 'inbox' ? 'inbox' : 'today')}</p>
-              <h1>{t(currentHeader[0])}</h1>
+              <h1>{t(section)}</h1>
               <p>{t(currentHeader[1])}</p>
             </div>
             {section === 'overview' || section === 'agencies'
@@ -465,7 +470,6 @@ export function Dashboard({
                     <ArrowRight size={15} className="directional" />
                   </Link>
                 </div>
-                <JourneyArt compact />
               </section>
             </>
           )}
@@ -636,7 +640,6 @@ export function Dashboard({
             <span>
               Datamine <span>✦</span> {t('brandTag')}
             </span>
-            <span>{t('phaseFive')}</span>
           </footer>
         </main>
       </div>

@@ -1,5 +1,25 @@
 # Datamine delivery
 
+## Automatic offer catalog and central WhatsApp, 2026-10-09
+
+Application commit `a994335` is pushed to GitHub and deployed at https://datamine-lilac.vercel.app as `dpl_4JegFykMZkT4npuN43xyUwWw41b2`. The Vercel production build and TypeScript compilation succeeded. Migrations 0010 and 0011 are applied locally and in production.
+
+The new **Offers** page saves each business's offer title, description, price/currency, language and expiry. Saving makes it immediately available to automatic recommendations without a second publish step. Catalog entries are distinct from manual bulk campaigns. **Create campaign** copies the saved offer details; subsequent catalog edits preserve that campaign's snapshot. Archived or expired catalog offers cannot be recommended or delivered through linked queued campaigns. AI categories remain dynamic.
+
+The existing verified demo sender **+1 555-632-3113** is now **Datamine WhatsApp**, the single central connection for consent, recommendations and campaign delivery. The customer gives consent once in that chat, and MORE/STOP replies remain there. Suppliers can publish without a WhatsApp API connection. Offers from every business, including the central workspace, are eligible; seller identity appears in the message. Businesses cannot browse central conversations or another business's templates. Manual campaign audiences remain scoped to the business's own CRM customers.
+
+Verification:
+
+- All 61 automated tests, ESLint, TypeScript and diff checks passed. After adding a final expiry-before-delivery guard, the 12 campaign checks passed again.
+- Authenticated HTTP tests cover catalog permissions, canonical price snapshots, immediate publication, edit/archive/restore, expiry rollback and hidden internal catalog entries. Recommendation tests cover a saved offer from a supplier without WhatsApp, one match then MORE, topic/global stops and locks during provider submission. Meta and AI are mocked in these automated tests.
+- Chrome on the local authenticated application saved a temporary offer, confirmed its automatic publication in PostgreSQL, created a separate manual campaign from the saved price, and archived the offer. Only those local verification records were removed afterward.
+- Production build is READY. Live PostgreSQL health returned 200; anonymous catalog access returned 401; Arabic and Sorani demo routes returned 200. Chrome verified the authenticated live Offers form, Arabic Offers page and central-number selection. The Meta credential check returned 200 for the expected sender.
+- The live error-log scan showed only the existing PostgreSQL SSL-mode deprecation warning. No synthetic offers or customers were added to production, and no new WhatsApp message was sent as part of this release's checks.
+
+To demonstrate: save a real offer with a future expiry, then send repeated relevant requests to the central demo number from a consenting controlled customer. AI sends one best eligible match during the central number's open reply window; MORE requests another unseen match. Saving alone does not broadcast. Meta templates remain required for manual sends outside the central 24-hour reply window.
+
+This release supersedes the per-business sender behavior described in the historical entries below.
+
 ## Smart offers release, 2026-10-09
 
 Application commit `fbcc381` is deployed to https://datamine-lilac.vercel.app as production deployment `dpl_BRqtQ12133p9WVYEpfLYSCYFqWY3`. The Vercel production build and TypeScript compilation succeeded. Migration `0009_smart_offer_flow.sql` is applied to local and production databases.

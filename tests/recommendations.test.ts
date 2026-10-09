@@ -12,6 +12,7 @@ import {
   processRecommendations,
   purgeRecommendations,
   scheduleRecommendation,
+  wakeWaitingRecommendations,
 } from '../src/lib/recommendations';
 import { moreRequestFollowsOffer, offerCommand } from '../src/lib/offer-preferences';
 import { ingestWebhook } from '../src/lib/webhook';
@@ -47,6 +48,14 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
   let staleTopic = false;
   let mixedTopicEvidence = false;
   let wrongRequestAction = false;
+  let templateStatus = 'PENDING';
+  const templateCatalog: {
+    id: string;
+    name: string;
+    language: string;
+    category: string;
+    components: { type: string; text: string }[];
+  }[] = [];
   let duringRank: (() => Promise<void>) | null = null;
   let duringSend: (() => Promise<void>) | null = null;
   globalThis.fetch = async (url, init) => {
@@ -87,6 +96,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       }
       const input = JSON.parse(JSON.parse(String(init?.body)).messages[1].content) as {
         mode: string;
+        requestedTopic?: string;
         latestMessageId: string;
         previousTopic: string | null;
         currentInterest: { value: string; messageId: string; quote: string } | null;
@@ -104,13 +114,15 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       const stopTopic = /stop phones offers/i.test(latest.body);
       const requested = !stopTopic && (input.mode === 'more' || /offers?/i.test(latest.body));
       const unnamed = !/camera|bikes|chairs|flowers|phones/i.test(latest.body);
-      const topicRequest = unnamed
-        ? input.currentInterest?.value ||
-          input.messages.filter((m) => /camera|bikes|chairs|flowers|phones/i.test(m.body)).at(-1)
-            ?.body ||
-          input.previousTopic ||
-          ''
-        : latest.body;
+      const topicRequest =
+        input.requestedTopic ||
+        (unnamed
+          ? input.currentInterest?.value ||
+            input.messages.filter((m) => /camera|bikes|chairs|flowers|phones/i.test(m.body)).at(-1)
+              ?.body ||
+            input.previousTopic ||
+            ''
+          : latest.body);
       const topic = staleTopic
         ? 'phones'
         : /camera/i.test(topicRequest)
@@ -170,8 +182,26 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         ],
       });
     }
+    if (String(url).startsWith('https://graph.facebook.com/v26.0/111/message_templates')) {
+      if (init?.method === 'POST') {
+        const input = JSON.parse(String(init.body));
+        const entry = { ...input, id: randomUUID() };
+        templateCatalog.push(entry);
+        return Response.json({ id: entry.id, status: templateStatus });
+      }
+      return Response.json({
+        data: templateCatalog.map((t) => ({ ...t, status: templateStatus })),
+      });
+    }
     assert.equal(String(url), 'https://graph.facebook.com/v26.0/12345/messages');
-    sends.push(JSON.parse(String(init?.body)));
+    const sent = JSON.parse(String(init?.body));
+    if (sent.type === 'template') {
+      assert.equal(templateStatus, 'APPROVED');
+      sent.text = {
+        body: templateCatalog.find((t) => t.name === sent.template.name)!.components[0].text,
+      };
+    }
+    sends.push(sent);
     assert.ok(sends.at(-1)!.text.body.length <= 4096, 'WhatsApp text length limit');
     assert.doesNotMatch(
       sends.at(-1)!.text.body,
@@ -1101,6 +1131,181 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         assert.equal(count('rank-hold'), 1);
       },
     );
+    await t.test(
+      'exhausted requests wait for a new business offer, survive other topics, and send only once',
+      async () => {
+        await customer('waiting-camera');
+        await inbound('waiting-camera', 'camera offers');
+        await processRecommendations(50);
+        await inbound('waiting-camera', 'more offers');
+        await processRecommendations(50);
+        assert.equal(count('waiting-camera'), 2);
+        assert.match(
+          sends.filter((s) => s.to === 'waiting-camera').at(-1)!.text.body,
+          /keep your request open/,
+        );
+        const [waiting] = await db
+          .select()
+          .from(schema.recommendationJobs)
+          .where(
+            and(
+              eq(schema.recommendationJobs.profileId, 'waiting-camera'),
+              eq(schema.recommendationJobs.status, 'waiting'),
+            ),
+          );
+        assert.ok(waiting.noticeMessageId);
+        assert.equal(waiting.messageId, null);
+        const aiCalls = rankingInputs.filter(
+          (i) => i.latestMessageId === waiting.triggerMessageId,
+        ).length;
+        await wakeWaitingRecommendations();
+        await processRecommendations(50);
+        assert.equal(
+          rankingInputs.filter((i) => i.latestMessageId === waiting.triggerMessageId).length,
+          aiCalls,
+          'unchanged inventory needs no AI',
+        );
+        await inbound('waiting-camera', 'I want bikes');
+        await processRecommendations(50);
+        const product = await createProduct(
+          { id: 'owner', platformRole: 'admin' },
+          {
+            agencyId: 'no-whatsapp',
+            name: 'New camera offer',
+            description: 'Camera for 800000 IQD',
+            price: '800000',
+            currency: 'IQD',
+            locale: 'en',
+          },
+        );
+        await Promise.all([processRecommendations(50), processRecommendations(50)]);
+        assert.equal(
+          count('waiting-camera'),
+          3,
+          'one newly available camera, despite later bike inquiry',
+        );
+        assert.match(sends.filter((s) => s.to === 'waiting-camera').at(-1)!.text.body, /800000/);
+        await updateProduct({ id: 'owner', platformRole: 'admin' }, product.id, {
+          price: '790000',
+        });
+        await processRecommendations(50);
+        assert.equal(count('waiting-camera'), 3, 'saving more offers cannot grant another send');
+        const [done] = await db
+          .select()
+          .from(schema.recommendationJobs)
+          .where(eq(schema.recommendationJobs.id, waiting.id));
+        assert.equal(done.status, 'accepted');
+        assert.equal(done.waitingForOffer, false);
+        assert.ok(done.noticeMessageId && done.messageId);
+        await updateProduct({ id: 'owner', platformRole: 'admin' }, product.id, { active: false });
+      },
+    );
+    await t.test(
+      'unmatched requests remain quiet and topic/global stops remove their permission',
+      async () => {
+        await customer('wait-stop');
+        await customer('wait-delete');
+        await inbound('wait-stop', 'camera offers');
+        await inbound('wait-delete', 'camera offers');
+        await processRecommendations(50);
+        await inbound('wait-stop', 'more offers');
+        await inbound('wait-delete', 'more offers');
+        await processRecommendations(50);
+        const before = count('wait-stop');
+        const unrelated = await createProduct(
+          { id: 'owner', platformRole: 'admin' },
+          {
+            agencyId: 'supplier',
+            name: 'Office chairs',
+            description: 'Office chairs',
+            price: '20',
+          },
+        );
+        await processRecommendations(50);
+        assert.equal(
+          count('wait-stop'),
+          before,
+          'unrelated catalog changes do not repeat the notice',
+        );
+        await webhook('wait-stop', 'STOP OFFER');
+        await webhook('wait-delete', 'STOP ALL');
+        const matching = await createProduct(
+          { id: 'owner', platformRole: 'admin' },
+          { agencyId: 'supplier', name: 'Camera deal', description: 'Camera', price: '100' },
+        );
+        await processRecommendations(50);
+        assert.equal(count('wait-stop'), before + 1, 'only the stop acknowledgement');
+        assert.equal(count('wait-delete'), 2, 'no later recommendation after deletion');
+        assert.equal(
+          (
+            await db
+              .select()
+              .from(schema.recommendationJobs)
+              .where(eq(schema.recommendationJobs.profileId, 'wait-delete'))
+          ).length,
+          0,
+        );
+        await updateProduct({ id: 'owner', platformRole: 'admin' }, unrelated.id, {
+          active: false,
+        });
+        await updateProduct({ id: 'owner', platformRole: 'admin' }, matching.id, { active: false });
+      },
+    );
+    await t.test('late offers wait for an approved template outside the reply window', async () => {
+      await customer('wait-template');
+      await inbound('wait-template', 'camera offers');
+      await processRecommendations(50);
+      await inbound('wait-template', 'more offers');
+      await processRecommendations(50);
+      await db
+        .update(schema.conversations)
+        .set({ lastInboundAt: new Date(Date.now() - 25 * 3600000) })
+        .where(eq(schema.conversations.id, 'wait-template'));
+      const product = await createProduct(
+        { id: 'owner', platformRole: 'admin' },
+        { agencyId: 'supplier', name: 'New camera sale', description: 'Camera', price: '300' },
+      );
+      await processRecommendations(50);
+      assert.equal(count('wait-template'), 2, 'no free text after window closure');
+      const [pendingTemplate] = await db
+        .select()
+        .from(schema.recommendationJobs)
+        .where(
+          and(
+            eq(schema.recommendationJobs.profileId, 'wait-template'),
+            eq(schema.recommendationJobs.status, 'templatePending'),
+          ),
+        );
+      assert.ok(pendingTemplate);
+      templateStatus = 'APPROVED';
+      await db
+        .update(schema.sharedProfiles)
+        .set({ updatedAt: new Date() })
+        .where(eq(schema.sharedProfiles.id, 'wait-template'));
+      await db
+        .update(schema.recommendationJobs)
+        .set({ dueAt: new Date(Date.now() - 1000) })
+        .where(eq(schema.recommendationJobs.id, pendingTemplate.id));
+      await processRecommendations(50);
+      assert.equal(
+        count('wait-template'),
+        2,
+        'changed profile requires a fresh match without consuming the request',
+      );
+      await wakeWaitingRecommendations();
+      await processRecommendations(50);
+      assert.equal(count('wait-template'), 3);
+      const [delivered] = await db
+        .select()
+        .from(schema.messages)
+        .where(eq(schema.messages.requestId, pendingTemplate.id));
+      assert.equal(delivered.type, 'template');
+      assert.equal(delivered.deliveryStatus, 'accepted');
+      await wakeWaitingRecommendations();
+      await processRecommendations(50);
+      assert.equal(count('wait-template'), 3);
+      await updateProduct({ id: 'owner', platformRole: 'admin' }, product.id, { active: false });
+    });
     await t.test('named topic stop does not depend on an available offer catalog', async () => {
       await db.update(schema.campaigns).set({ networkEnabled: false });
       await customer('no-catalog');

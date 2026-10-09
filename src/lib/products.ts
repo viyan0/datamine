@@ -6,6 +6,7 @@ import { products, memberships, campaigns } from '@/db/schema';
 import { agencyAccessForUser, HttpError } from './access';
 import type { ProductView } from './product-types';
 import { productOfferText } from './product-types';
+import { wakeWaitingRecommendations } from './recommendations';
 
 export type { ProductView } from './product-types';
 export { productOfferText } from './product-types';
@@ -123,7 +124,7 @@ export async function createProduct(current: CurrentUser, input: unknown) {
   const fields = createProductSchema.parse(input);
   await agencyAccessForUser(current, fields.agencyId, true);
   validateAvailability(fields);
-  return getDb().transaction(async (tx) => {
+  const saved = await getDb().transaction(async (tx) => {
     const [product] = await tx
       .insert(products)
       .values({ ...fields, id: randomUUID() })
@@ -131,6 +132,8 @@ export async function createProduct(current: CurrentUser, input: unknown) {
     await saveCatalogCampaign(tx, product, current.id);
     return serialize(product);
   });
+  await wakeWaitingRecommendations();
+  return saved;
 }
 
 export async function updateProduct(current: CurrentUser, id: string, input: unknown) {
@@ -142,7 +145,7 @@ export async function updateProduct(current: CurrentUser, id: string, input: unk
     .where(eq(products.id, id));
   if (!existing) throw new HttpError(404, 'notFound');
   await agencyAccessForUser(current, existing.agencyId, true);
-  return db.transaction(async (tx) => {
+  const saved = await db.transaction(async (tx) => {
     const [product] = await tx
       .update(products)
       .set({ ...fields, updatedAt: new Date() })
@@ -158,6 +161,8 @@ export async function updateProduct(current: CurrentUser, id: string, input: unk
     await saveCatalogCampaign(tx, product, current.id);
     return serialize(product);
   });
+  await wakeWaitingRecommendations();
+  return saved;
 }
 
 export async function getActiveProduct(

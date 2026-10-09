@@ -1,6 +1,7 @@
 import { requireSession } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { createProduct, listProducts } from '@/lib/products';
+import { wakeAutomation } from '@/lib/automation';
 
 export async function GET() {
   try {
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
     checkOrigin(request);
     const session = await requireSession();
     const product = await createProduct(session.user, await bodyJson(request));
+    await wakeAutomation();
     return Response.json({ product }, { status: 201 });
   } catch (error) {
     return apiError(error);

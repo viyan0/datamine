@@ -8,6 +8,7 @@ import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { listCampaigns, networkAvailability } from '@/lib/campaigns';
 import { analysisConfigured } from '@/lib/anthropic';
 import { wakeAutomation } from '@/lib/automation';
+import { wakeWaitingRecommendations } from '@/lib/recommendations';
 import { getActiveProduct } from '@/lib/products';
 import { productOfferText } from '@/lib/product-types';
 export async function GET() {
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
         createdBy: session.user.id,
       });
     });
+    if (input.networkEnabled) await wakeWaitingRecommendations();
     await wakeAutomation();
     return Response.json({ id }, { status: 201 });
   } catch (error) {

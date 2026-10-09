@@ -73,6 +73,16 @@ test('queue wakeups respect retries and leases, recover sends, and stop when idl
     await db.exec('update recommendation_jobs set due_at=null');
     assert.equal(await due(), null, 'exhausted recommendation retries do not spin');
     await db.exec(
+      "update recommendation_jobs set status='waiting', due_at=now() + interval '15 minutes'",
+    );
+    assert.ok(automationDelay(await due())! >= 890, 'saved requests keep a recovery wake');
+    assert.equal(await due(false), null, 'waiting requests need AI to rank a changed catalog');
+    await db.exec("update recommendation_jobs set status='templatePending'");
+    assert.ok(
+      automationDelay(await due(false))! >= 890,
+      'template approval can resume without another AI decision',
+    );
+    await db.exec(
       "update recommendation_jobs set status='processing', due_at=now(), started_at=now(), run_id='r'",
     );
     assert.ok(automationDelay(await due())! >= 89, 'active recommendation rank keeps its lease');
@@ -108,6 +118,14 @@ test('queue wakeups respect retries and leases, recover sends, and stop when idl
     );
     await db.exec("update messages set delivery_status='uncertain' where id='m'");
     assert.equal(await due(), null);
+    await db.exec(
+      "update messages set request_id='recommendation:notice', delivery_status='submitting', created_at=now() where id='m'",
+    );
+    assert.ok(
+      automationDelay(await due(false))! >= 89,
+      'recover a waiting-request acknowledgement without resending it',
+    );
+    await db.exec("update messages set delivery_status='uncertain' where id='m'");
     assert.equal(automationDelay(null), null);
   } finally {
     await db.close();

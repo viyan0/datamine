@@ -23,6 +23,7 @@ import type { ApprovedTemplate } from './template-types';
 import type { CampaignView } from './campaign-types';
 import { centralConnection } from './central-whatsapp';
 import { getActiveProduct, isProductActive } from './products';
+import { wakeWaitingRecommendations } from './recommendations';
 
 type Campaign = typeof campaigns.$inferSelect;
 export function networkAvailability(enabled: boolean, expiresAt?: string | null) {
@@ -56,6 +57,7 @@ export async function publishCampaign(id: string, enabled: boolean, expiresAt?: 
       .returning({ id: campaigns.id });
     if (!updated) throw new HttpError(409, 'campaignLocked');
   });
+  await wakeWaitingRecommendations();
 }
 
 function sameTemplate(a: Campaign['template'] | undefined, b: Campaign['template']) {

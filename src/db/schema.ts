@@ -397,6 +397,9 @@ export const recommendationJobs = pgTable(
       .unique()
       .references(() => messages.id),
     mode: text('mode').$type<'interest' | 'more' | 'stop' | 'response'>().notNull(),
+    waitingForOffer: boolean('waiting_for_offer').default(false).notNull(),
+    noticeMessageId: text('notice_message_id').references(() => messages.id),
+    offerCheckHash: text('offer_check_hash'),
     status: text('status').default('pending').notNull(),
     sourceRevision: integer('source_revision').notNull(),
     profileUpdatedAt: timestamp('profile_updated_at', { withTimezone: true }).notNull(),

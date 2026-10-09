@@ -1,5 +1,17 @@
 # Datamine delivery
 
+## Direct offer requests and topic changes, 2026-10-09
+
+Application commit `f9ffb13` is pushed to GitHub and deployed at https://datamine-lilac.vercel.app as `dpl_EUZEcBeTV7PRtfJoiwsYtcVMbkMK`. The production build and TypeScript compilation passed. No database migration is required.
+
+Explicit requests for offers now receive one suitable unseen offer without requiring repeated interest. A small AI intent check distinguishes these requests from unsolicited recommendations, which still require repeated interest in the same topic. Follow-ups use the latest subject, so a camera question after a laptop offer followed by MORE stays about cameras. A focused AI evidence check rejects unrelated product requests as proof of repeated interest. When no suitable unseen offer is available, the customer receives a short localized reply instead of silence. Topics remain AI-generated.
+
+Verification: all 65 automated tests, ESLint, TypeScript and diff checks passed. An isolated PostgreSQL flow using real Haiku passed direct requests, laptop-to-camera changes, MORE, two separate customers and duplicate prevention with 14 AI calls and five simulated provider sends. Consent, topic stops, expiry, freshness and uncertain-send guards remain covered.
+
+After deployment, only the two latest unsent no-match jobs were requeued after checking their latest inbound message, accepted consent, active profile and absence of a provider submission. The customer ending 8010 received a provider-accepted camera offer, with the latest observed callback reporting Sent. The customer ending 3220 had already read the camera offer and received a Delivered reply stating there were no more matching camera offers. Previously accepted offers were not replayed. Chrome confirmed the separate histories and responses in the live inbox. The recent error-log sample contained only the existing PostgreSQL SSL-mode deprecation warning.
+
+Chat context currently uses up to 30 recent messages with input-length limits, saved AI insights and separate offer/consent records. It does not yet implement rolling-summary compaction; the saved summary does not replace older messages in subsequent analysis prompts.
+
 ## Contextual offer matching and permanent WhatsApp credential, 2026-10-09
 
 Application commit `bb82cd2` is pushed to GitHub and deployed to https://datamine-lilac.vercel.app as `dpl_24i9gzZX3uemYoMVYVtgvEejBefS`. The production build and TypeScript compilation passed.

@@ -1,5 +1,13 @@
 # Datamine delivery
 
+## Live image offer verified, 2026-10-09
+
+At the user's explicit request, one **Dell image delivery test** campaign was sent only to the controlled customer ending 8010 through the existing `deliverRecipient` application path. It copied the saved Dell offer price (12,000 IQD) and seller contact, used a sample public Dell laptop PNG, and labelled the photo as illustrative because the actual offer model is unspecified. The original catalog offer was not assigned an invented product photo, and the test campaign is not published for automatic recommendations.
+
+The sender, accepted consent, active profile, topic preferences, current product and central reply window were checked before submission and rechecked by the delivery function. Stable test IDs prevent duplicate submissions. Message `6bee56fd-431d-428d-b198-cb8553baea91` was submitted as `type: image`, contains a caption without the image URL, and received Meta's **Delivered** callback. Chrome confirmed the inbox image loaded at 509 by 402 pixels. Screenshot: `artifacts/whatsapp-native-image-delivered.png` (local, ignored). The image source is Dell's official [Dell 14 Plus page](https://www.dell.com/en-us/shop/laptop-computers/spd/dellplus14laptopdb14250). No application change or new deployment was necessary for this test.
+
+This verifies native image delivery in an open customer-service window with a caption under 1,024 characters. The existing long-caption/text-template link fallback remains; a separate business-number handoff is still unverified live.
+
 ## One central consent, seller contacts and offer photos, 2026-10-09
 
 Application commit `ee4d73b` is pushed to GitHub and deployed to https://datamine-lilac.vercel.app as `dpl_CcqsUYBMYxshuE8HzAVQmcyoaiWY`. The production build and TypeScript compilation passed. Migration `0013_business_consent_offer_media` is applied to local and production PostgreSQL.

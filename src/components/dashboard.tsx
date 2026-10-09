@@ -43,16 +43,37 @@ import { AgencyInbox } from './inbox';
 import { DashboardCharts } from './dashboard-charts';
 
 const languageNames: Record<string, string> = { en: 'English', ar: 'العربية', ckb: 'کوردی' };
-const nav = [
-  { key: 'overview', icon: LayoutGrid },
-  { key: 'inbox', icon: Inbox },
-  { key: 'customers', icon: Users },
-  { key: 'offers', label: 'catalogTitle', icon: Tags },
-  { key: 'campaigns', icon: Megaphone },
-  { key: 'agencies', icon: Building2 },
-  { key: 'connections', icon: MessageCircle },
-  { key: 'settings', icon: Settings2 },
+const navGroups = [
+  {
+    label: 'workspace',
+    items: [
+      { key: 'overview', icon: LayoutGrid },
+      { key: 'inbox', icon: Inbox },
+      { key: 'customers', icon: Users },
+      { key: 'offers', label: 'catalogTitle', icon: Tags },
+      { key: 'campaigns', icon: Megaphone },
+    ],
+  },
+  {
+    label: 'manage',
+    items: [
+      { key: 'agencies', icon: Building2 },
+      { key: 'connections', icon: MessageCircle },
+      { key: 'settings', icon: Settings2 },
+    ],
+  },
 ];
+const pageSubtitles: Record<string, string> = {
+  overview: 'welcomeSub',
+  inbox: 'inboxSub',
+  customers: 'customersSub',
+  offers: 'offersSub',
+  campaigns: 'campaignsSub',
+  agencies: 'agenciesSub',
+  team: 'teamSub',
+  connections: 'connectionSub',
+  settings: 'settingsSub',
+};
 function Avatar({ name, index = 0 }: { name: string; index?: number }) {
   return (
     <span className={`avatar avatar-${index % 4}`}>
@@ -182,20 +203,25 @@ export function Dashboard({
           </button>
         </div>
         <nav aria-label={t('workspace')}>
-          {nav.map(({ key, label, icon: Icon }) => (
-            <Link
-              key={key}
-              href={`${root}${key === 'overview' ? '' : `/${key}`}`}
-              className={`nav-item ${section === key ? 'selected' : ''}`}
-              aria-current={section === key ? 'page' : undefined}
-              onClick={() => setMenu(false)}
-            >
-              <span className="nav-icon">
-                <Icon size={18} />
-              </span>
-              <span>{t(label || key)}</span>
-              {key === 'agencies' && <span className="nav-count">{data.agencies.length}</span>}
-            </Link>
+          {navGroups.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <p className="nav-label">{t(group.label)}</p>
+              {group.items.map(({ key, label, icon: Icon }) => (
+                <Link
+                  key={key}
+                  href={`${root}${key === 'overview' ? '' : `/${key}`}`}
+                  className={`nav-item ${section === key ? 'selected' : ''}`}
+                  aria-current={section === key ? 'page' : undefined}
+                  onClick={() => setMenu(false)}
+                >
+                  <span className="nav-icon">
+                    <Icon size={18} />
+                  </span>
+                  <span>{t(label || key)}</span>
+                  {key === 'agencies' && <span className="nav-count">{data.agencies.length}</span>}
+                </Link>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -232,31 +258,32 @@ export function Dashboard({
               <Menu size={20} />
             </button>
             <span>{t('workspace')}</span>
-            <ChevronRight size={13} />
+            <ChevronRight size={14} className="directional" />
             <b>{t(section === 'offers' ? 'catalogTitle' : section)}</b>
           </div>
           <div className="topbar-right">
+            {demo && (
+              <>
+                <span className="demo-banner" title={t('demoNotice')}>
+                  <Sparkles size={14} />
+                  <span>{t('demoNotice')}</span>
+                </span>
+                <Link className="btn btn-outline topbar-signin" href={`/${locale}`}>
+                  {t('signIn')}
+                  <ArrowUpRight size={14} />
+                </Link>
+              </>
+            )}
             <LanguageSwitch />
           </div>
         </header>
-        {demo && (
-          <div className="demo-banner">
-            <span>
-              <Sparkles size={14} />
-              {t('demoNotice')}
-            </span>
-            <Link href={`/${locale}`}>
-              {t('signIn')}
-              <ArrowUpRight size={14} />
-            </Link>
-          </div>
-        )}
         <main
           className={`dashboard-content ${section === 'inbox' ? 'inbox-content' : section === 'overview' ? 'overview-content' : ''}`}
         >
           <div className="page-heading">
             <div>
               <h1>{t(section === 'offers' ? 'catalogTitle' : section)}</h1>
+              <p>{t(pageSubtitles[section])}</p>
             </div>
             {section === 'overview' ? (
               <Link className="btn btn-primary" href={`${root}/inbox`}>
@@ -386,9 +413,12 @@ export function Dashboard({
             </>
           )}
           {section === 'connections' && (
-            <>
-              <CentralWhatsapp data={data} demo={demo} />
-              {data.user.platformAdmin && (
+            <div className="page-stack">
+              <div className="connections-overview">
+                <CentralWhatsapp data={data} demo={demo} />
+                <WebhookPanel demo={demo} admin={data.user.platformAdmin} />
+              </div>
+              {data.user.platformAdmin && data.connections.length > 0 && (
                 <div className="connection-grid">
                   {data.connections.map((c, i) => (
                     <article className="panel connection-card" key={c.id}>
@@ -437,11 +467,10 @@ export function Dashboard({
                   </Empty>
                 </section>
               )}
-              <WebhookPanel demo={demo} admin={data.user.platformAdmin} />
               {!demo && data.user.platformAdmin && data.agencies.length > 0 && (
                 <MessagePanel data={data} />
               )}
-            </>
+            </div>
           )}
           {section === 'settings' && (
             <div className="settings-grid">
@@ -524,14 +553,12 @@ function WebhookPanel({ demo, admin }: { demo: boolean; admin: boolean }) {
     }
   }
   return (
-    <section className="panel webhook-panel">
-      <div>
-        <span className="stat-icon lavender">
-          <Radio size={20} />
-        </span>
-        <h2>{t('webhookTitle')}</h2>
-        <p>{t('webhookHelp')}</p>
-      </div>
+    <section className="panel settings-card webhook-panel">
+      <span className="settings-icon">
+        <Radio />
+      </span>
+      <h2>{t('webhookTitle')}</h2>
+      <p>{t('webhookHelp')}</p>
       {!demo && admin && (
         <div className="webhook-actions">
           <Button variant="outline" onClick={() => copy('callbackUrl')}>

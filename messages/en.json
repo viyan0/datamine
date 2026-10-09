@@ -600,5 +600,7 @@
     "saving": "Saving…",
     "save": "Use this number"
   },
-  "catalogTitle": "Offers"
+  "catalogTitle": "Offers",
+  "manage": "Manage",
+  "offersSub": "Your offer catalog. Active offers are recommended to matching customers automatically."
 }

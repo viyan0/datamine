@@ -91,7 +91,8 @@ function InboxThreads({
   editable: boolean;
   categories: string[];
 }) {
-  const t = useTranslations('crm');
+  const t = useTranslations('crm'),
+    locale = useLocale();
   const initial = demo ? demoConversations.filter((c) => c.agencyId === agencyId) : [];
   const [threads, setThreads] = useState<Conversation[]>(initial);
   const [selected, setSelected] = useState<string | null>(initial[0]?.id || null);
@@ -144,6 +145,15 @@ function InboxThreads({
   const current = filtered.find((c) => c.id === selected) || filtered[0];
   function update(id: string, fields: Partial<Conversation>) {
     setThreads((all) => all.map((c) => (c.id === id ? { ...c, ...fields } : c)));
+  }
+  function threadTime(value: string) {
+    const date = new Date(value);
+    return new Intl.DateTimeFormat(
+      locale,
+      date.toDateString() === new Date().toDateString()
+        ? { hour: '2-digit', minute: '2-digit' }
+        : { month: 'short', day: 'numeric' },
+    ).format(date);
   }
   return (
     <>
@@ -207,13 +217,17 @@ function InboxThreads({
                 </span>
                 <span className="thread-summary">
                   <span className="thread-name">
-                    {c.name}
-                    <i className={`inquiry-dot status-${c.inquiryStatus}`} />
+                    <b>{c.name}</b>
+                    <time dateTime={c.lastMessageAt} suppressHydrationWarning>
+                      {threadTime(c.lastMessageAt)}
+                    </time>
                   </span>
                   <span className="thread-preview" dir="auto">
                     {c.preview || t('mediaMessage')}
                   </span>
                   <span className="thread-tags">
+                    <i className={`inquiry-dot status-${c.inquiryStatus}`} />
+                    {t.has(c.inquiryStatus) ? t(c.inquiryStatus) : c.inquiryStatus} ·{' '}
                     {t.has(c.service) ? t(c.service) : c.service}
                     {c.destination && <> · {c.destination}</>}
                   </span>

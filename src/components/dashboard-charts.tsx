@@ -76,6 +76,14 @@ export function DashboardCharts({
   );
 }
 
+// A column that sits square on the baseline with a rounded data end.
+function columnPath(x: number, baseline: number, width: number, height: number) {
+  if (height <= 0) return '';
+  const r = Math.min(4, width / 2, height),
+    top = baseline - height;
+  return `M${x} ${baseline}V${top + r}Q${x} ${top} ${x + r} ${top}H${x + width - r}Q${x + width} ${top} ${x + width} ${top + r}V${baseline}Z`;
+}
+
 function ActivityChart({ daily }: { daily: DailyActivity[] }) {
   const t = useTranslations('dashboard'),
     locale = useLocale(),
@@ -104,7 +112,13 @@ function ActivityChart({ daily }: { daily: DailyActivity[] }) {
           const y = top + height - (tick * height) / 4;
           return (
             <g key={tick} aria-hidden="true">
-              <line x1={left} x2={left + width} y1={y} y2={y} className="chart-gridline" />
+              <line
+                x1={left}
+                x2={left + width}
+                y1={y}
+                y2={y}
+                className={tick ? 'chart-gridline' : 'chart-baseline'}
+              />
               <text x={left - 9} y={y + 4} textAnchor="end" className="chart-axis">
                 {number.format((ceiling * tick) / 4)}
               </text>
@@ -135,20 +149,12 @@ function ActivityChart({ daily }: { daily: DailyActivity[] }) {
                 rx={5}
                 className="chart-hit-area"
               />
-              <rect
-                x={x - bar - 1.5}
-                y={top + height - (day.received / ceiling) * height}
-                width={bar}
-                height={(day.received / ceiling) * height}
-                rx={Math.min(4, bar / 2)}
+              <path
+                d={columnPath(x - bar - 1.5, top + height, bar, (day.received / ceiling) * height)}
                 className="chart-bar-received"
               />
-              <rect
-                x={x + 1.5}
-                y={top + height - (day.sent / ceiling) * height}
-                width={bar}
-                height={(day.sent / ceiling) * height}
-                rx={Math.min(4, bar / 2)}
+              <path
+                d={columnPath(x + 1.5, top + height, bar, (day.sent / ceiling) * height)}
                 className="chart-bar-sent"
               />
               {(daily.length === 7 ||
@@ -196,11 +202,14 @@ function ConversationChart({ counts }: { counts: DashboardAnalytics['conversatio
     locale = useLocale();
   const number = new Intl.NumberFormat(locale);
   const total = counts.new + counts.inProgress + counts.closed;
+  // Segment colours come from the shared inquiry status tokens, matching the inbox dots.
   const segments = [
-    { key: 'new', count: counts.new, color: '#d32b65' },
-    { key: 'inProgress', count: counts.inProgress, color: '#e7b6c8' },
-    { key: 'closed', count: counts.closed, color: '#302b32' },
+    { key: 'new', count: counts.new },
+    { key: 'inProgress', count: counts.inProgress },
+    { key: 'closed', count: counts.closed },
   ];
+  // Leave a thin surface-coloured gap between segments when more than one is visible.
+  const gap = segments.filter((segment) => segment.count).length > 1 ? 0.6 : 0;
   return (
     <section className="chart-card conversation-chart">
       <header className="chart-heading">
@@ -209,22 +218,23 @@ function ConversationChart({ counts }: { counts: DashboardAnalytics['conversatio
       </header>
       <div className="conversation-ring">
         <svg viewBox="0 0 200 200" aria-hidden="true">
-          <circle cx="100" cy="100" r="76" fill="none" stroke="#efeaed" strokeWidth="23" />
+          <circle cx="100" cy="100" r="78" fill="none" className="ring-track" strokeWidth="18" />
           {total > 0 &&
             segments.map((segment, index) => {
               const offset =
                 (segments.slice(0, index).reduce((sum, item) => sum + item.count, 0) / total) * 100;
+              const length = Math.max((segment.count / total) * 100 - gap, 0);
               return (
                 <circle
                   key={segment.key}
                   cx="100"
                   cy="100"
-                  r="76"
+                  r="78"
                   fill="none"
-                  stroke={segment.color}
-                  strokeWidth="23"
+                  className={`ring-${segment.key}`}
+                  strokeWidth="18"
                   pathLength="100"
-                  strokeDasharray={`${(segment.count / total) * 100} 100`}
+                  strokeDasharray={`${length} 100`}
                   strokeDashoffset={-offset}
                   transform="rotate(-90 100 100)"
                 />
@@ -240,7 +250,7 @@ function ConversationChart({ counts }: { counts: DashboardAnalytics['conversatio
         {segments.map((segment) => (
           <li key={segment.key}>
             <span>
-              <i style={{ background: segment.color }} />
+              <i className={`key-${segment.key}`} />
               {status(segment.key)}
             </span>
             <strong>{number.format(segment.count)}</strong>

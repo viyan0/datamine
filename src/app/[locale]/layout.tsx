@@ -1,10 +1,13 @@
 import type { Metadata } from 'next';
+import { Inter, Vazirmatn } from 'next/font/google';
 import { NextIntlClientProvider, hasLocale } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
 import '../globals.css';
-import '../workspace-theme.css';
+// Latin text uses Inter; Arabic and Sorani glyphs fall through to Vazirmatn.
+const inter = Inter({ subsets: ['latin'], variable: '--font-latin', display: 'swap' });
+const vazirmatn = Vazirmatn({ subsets: ['arabic'], variable: '--font-arabic', display: 'swap' });
 export const metadata: Metadata = {
   title: { default: 'Datamine · Business workspace', template: '%s · Datamine' },
   description: 'Bring your businesses, teams, and WhatsApp conversations together.',
@@ -21,7 +24,11 @@ export default async function LocaleLayout({
   if (!hasLocale(routing.locales, locale)) notFound();
   setRequestLocale(locale);
   return (
-    <html lang={locale} dir={locale === 'en' ? 'ltr' : 'rtl'}>
+    <html
+      lang={locale}
+      dir={locale === 'en' ? 'ltr' : 'rtl'}
+      className={`${inter.variable} ${vazirmatn.variable}`}
+    >
       <body>
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
       </body>

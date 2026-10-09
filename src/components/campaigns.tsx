@@ -151,7 +151,7 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
   }
   return (
     <>
-      {demo && <p className="form-hint">{t('demoHint')}</p>}
+      {demo && <p className="notice">{t('demoHint')}</p>}
       {configured === false && !demo && <p className="notice">{t('aiSetup')}</p>}
       <div className="toolbar">
         <span>{t('count', { count: items.length })}</span>

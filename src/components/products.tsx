@@ -161,7 +161,7 @@ export function Products({ data, demo }: { data: WorkspaceData; demo: boolean })
   const draft = editing && editing !== 'new' ? editing : null;
   return (
     <>
-      {demo && <p className="form-hint">{t('demoHint')}</p>}
+      {demo && <p className="notice">{t('demoHint')}</p>}
       <div className="toolbar product-toolbar">
         <label className="search-field">
           <Search size={17} />

@@ -1,4 +1,25 @@
-# Phase 5 demo delivery
+# Datamine delivery
+
+## Smart offers release, 2026-10-09
+
+Application commit `fbcc381` is deployed to https://datamine-lilac.vercel.app as production deployment `dpl_BRqtQ12133p9WVYEpfLYSCYFqWY3`. The Vercel production build and TypeScript compilation succeeded. Migration `0009_smart_offer_flow.sql` is applied to local and production databases.
+
+The central administrator can see every business and create business-owner login invitations from Businesses. Each business sees its own CRM contacts and campaign audience, and sends through its own WhatsApp connection. Consenting customers are enrolled once. Existing offers remain private until the business enables Recommend across Datamine and supplies an expiry date.
+
+Automatic recommendations compare published offers from other businesses after repeated interest, send one suitable offer, and wait for MORE. STOP OFFER blocks the latest offered topic; named topic stops are interpreted by AI. Other topics remain available. STOP, STOP ALL, and DELETE MY DATA remove saved chats, profiles, recommendation history, and queued offers. A minimal consent-choice record blocks later collection. Manual business campaigns do not have the one-automatic-offer limit.
+
+Verification completed:
+
+- ESLint, TypeScript, and all 53 automated checks pass. Tests cover real authenticated HTTP sessions, business isolation, invitations, consent, stale preferences, sender windows, publication expiry, queue recovery, duplicate prevention, topic stops, and deletion.
+- A fresh isolated flow used actual `anthropic/claude-haiku-5.5` through OpenRouter: 13 AI calls and three recommendations. It selected the cheaper equivalent bicycle offer from another business, excluded an own-business offer, waited for MORE, preserved other interests after a topic stop, then deleted the test customer's data after STOP ALL. Meta delivery was mocked for this flow; the in-memory database was destroyed afterward.
+- Production health returned 200 with PostgreSQL connected. English, Arabic, and Sorani entry routes returned 200; anonymous customer API access returned 401.
+- The deployed managed queue reprocessed the existing consenting chat automatically to analysis version 5, with no analysis error and no outstanding profile hold. With one business and no published network offers, the recommendation job correctly finished with no match.
+- The expired demo Meta token was refreshed under the existing permissions and stored encrypted. Meta's credential check returned 200. One message sent through the live Datamine browser inbox was accepted and its real Meta delivery callback marked it Delivered in PostgreSQL and the UI.
+- The production error-log scan found only the existing PostgreSQL driver's SSL-mode deprecation warnings, not an application processing failure.
+
+The live workspace still has one business, one customer profile, and two existing offers. No synthetic cross-business customers or offers were added to production, and the real customer's data was not deleted. A live cross-business demonstration needs a second connected business with a published offer. The isolated real-AI result is not a benchmark of model accuracy across every business or language. The refreshed Meta credential remains a temporary demo token.
+
+The sections below record earlier releases and their results; the current release details above supersede their pending-test notes and former central-sender behavior.
 
 ## Single WhatsApp consent and automatic audiences
 

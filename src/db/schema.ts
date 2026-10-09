@@ -8,7 +8,10 @@ import {
   jsonb,
   uniqueIndex,
   index,
+  numeric,
+  check,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import type { SavedAnalysis } from '@/lib/analysis-types';
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).defaultNow().notNull();
@@ -288,36 +291,77 @@ export const profileEvents = pgTable('profile_events', {
   channel: text('channel').default('customer_portal').notNull(),
   createdAt: createdAt(),
 });
-export const campaigns = pgTable('campaigns', {
-  id: text('id').primaryKey(),
-  agencyId: text('agency_id')
-    .notNull()
-    .references(() => agencies.id),
-  createdBy: text('created_by')
-    .notNull()
-    .references(() => user.id),
-  title: text('title').notNull(),
-  offerText: text('offer_text').notNull(),
-  networkEnabled: boolean('network_enabled').default(false).notNull(),
-  networkExpiresAt: timestamp('network_expires_at', { withTimezone: true }),
-  locale: text('locale').notNull(),
-  status: text('status').default('matching').notNull(),
-  senderId: text('sender_id').references(() => connections.id),
-  deliveryMode: text('delivery_mode').$type<'template' | 'reply'>().default('template').notNull(),
-  template: jsonb('template').$type<{ id: string; name: string; language: string; body: string }>(),
-  analysis: jsonb('analysis').$type<{
-    summary: string;
-    categories: string[];
-    model: string;
-    sourceHash: string;
-  }>(),
-  dueAt: timestamp('due_at', { withTimezone: true }).defaultNow(),
-  runId: text('run_id'),
-  startedAt: timestamp('started_at', { withTimezone: true }),
-  attempts: integer('attempts').default(0).notNull(),
-  error: text('error'),
-  createdAt: createdAt(),
-});
+export const products = pgTable(
+  'products',
+  {
+    id: text('id').primaryKey(),
+    agencyId: text('agency_id')
+      .notNull()
+      .references(() => agencies.id),
+    name: text('name').notNull(),
+    description: text('description').default('').notNull(),
+    price: numeric('price', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').default('IQD').notNull(),
+    locale: text('locale').default('en').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true })
+      .default(sql`now() + interval '7 days'`)
+      .notNull(),
+    active: boolean('active').default(true).notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('product_agency_idx').on(t.agencyId),
+    check('product_price_nonnegative', sql`${t.price} >= 0`),
+    check('product_currency_format', sql`${t.currency} ~ '^[A-Z]{3}$'`),
+  ],
+);
+
+export const campaigns = pgTable(
+  'campaigns',
+  {
+    id: text('id').primaryKey(),
+    agencyId: text('agency_id')
+      .notNull()
+      .references(() => agencies.id),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id),
+    title: text('title').notNull(),
+    offerText: text('offer_text').notNull(),
+    productId: text('product_id').references(() => products.id),
+    catalogOnly: boolean('catalog_only').default(false).notNull(),
+    networkEnabled: boolean('network_enabled').default(false).notNull(),
+    networkExpiresAt: timestamp('network_expires_at', { withTimezone: true }),
+    locale: text('locale').notNull(),
+    status: text('status').default('matching').notNull(),
+    senderId: text('sender_id').references(() => connections.id),
+    deliveryMode: text('delivery_mode').$type<'template' | 'reply'>().default('template').notNull(),
+    template: jsonb('template').$type<{
+      id: string;
+      name: string;
+      language: string;
+      body: string;
+    }>(),
+    analysis: jsonb('analysis').$type<{
+      summary: string;
+      categories: string[];
+      model: string;
+      sourceHash: string;
+    }>(),
+    dueAt: timestamp('due_at', { withTimezone: true }).defaultNow(),
+    runId: text('run_id'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    attempts: integer('attempts').default(0).notNull(),
+    error: text('error'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('campaign_catalog_product_unique')
+      .on(t.productId)
+      .where(sql`${t.catalogOnly} = true`),
+  ],
+);
 export const campaignRecipients = pgTable(
   'campaign_recipients',
   {

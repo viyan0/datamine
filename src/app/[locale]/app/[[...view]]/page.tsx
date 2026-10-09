@@ -11,10 +11,12 @@ export default async function Workspace({
 }) {
   const { locale, view } = await params;
   const section = view?.[0] || 'overview';
+  if (section === 'products') redirect(`/${locale}/app/offers`);
   if (
     (view?.length ?? 0) > 1 ||
     ![
       'overview',
+      'offers',
       'campaigns',
       'customers',
       'inbox',

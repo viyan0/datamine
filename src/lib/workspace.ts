@@ -10,9 +10,11 @@ import {
   auditEvents,
 } from '@/db/schema';
 import { activityDays, type DashboardAnalytics } from './dashboard-analytics';
+import { centralConnection } from './central-whatsapp';
 
 export type WorkspaceData = {
   user: { name: string; email: string; platformAdmin: boolean };
+  centralWhatsapp?: { id: string; label: string; displayPhone: string } | null;
   agencies: {
     id: string;
     name: string;
@@ -55,6 +57,10 @@ export async function loadWorkspace(
   includeAnalytics = false,
 ): Promise<WorkspaceData> {
   const db = getDb();
+  const central = await centralConnection();
+  const centralWhatsapp = central
+    ? { id: central.id, label: central.label, displayPhone: central.displayPhone }
+    : null;
   const agencyRows = await db
     .select({
       id: agencies.id,
@@ -82,6 +88,7 @@ export async function loadWorkspace(
   if (!ids.length)
     return {
       user: own,
+      centralWhatsapp,
       agencies: [],
       connections: [],
       members: [],
@@ -144,6 +151,7 @@ export async function loadWorkspace(
   ]);
   return {
     user: own,
+    centralWhatsapp,
     agencies: agencyRows.map((a) => ({ ...a, createdAt: a.createdAt.toISOString() })),
     connections: connectionRows.map((c) => ({
       ...c,

@@ -28,7 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       .from(campaigns)
       .innerJoin(agencies, eq(agencies.id, campaigns.agencyId))
       .where(and(eq(campaigns.id, id), inArray(campaigns.status, ['ready', 'matching', 'error'])));
-    if (!row) throw new HttpError(409, 'campaignLocked');
+    if (!row || row.campaign.catalogOnly) throw new HttpError(409, 'campaignLocked');
     const c = row.campaign;
     await requireAgency(c.agencyId, true);
     if (input.action === 'draft')
@@ -42,13 +42,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       );
     const sender = await campaignSender(c.agencyId, c.senderId);
     if (!sender) throw new HttpError(409, 'campaignSenderMissing');
-    await requireAgency(sender.agencyId, true);
     const template = await createMarketingTemplate({
       wabaId: sender.wabaId,
       token: decrypt(sender.accessTokenEncrypted, `${sender.id}:token`),
       campaignId: c.id,
       language: c.locale,
-      body: input.body,
+      body: templateBodySchema.parse(
+        input.body.toLocaleLowerCase().includes(row.businessName.toLocaleLowerCase())
+          ? input.body
+          : `Datamine · ${row.businessName}\n\n${input.body}`,
+      ),
     });
     await attachCampaignTemplate(c.id, template, sender.id);
     await wakeAutomation();

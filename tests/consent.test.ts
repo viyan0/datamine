@@ -131,7 +131,7 @@ test('one WhatsApp consent connects AI interests to existing offers; decline pur
       ['d', 'b', '12346'],
     ])
       await db.query(
-        "insert into whatsapp_connections(id,agency_id,label,phone_number_id,waba_id,display_phone,access_token_encrypted,app_secret_encrypted) values ($1,$2,'Test',$3,'67890','test',$4,$5)",
+        "insert into whatsapp_connections(id,agency_id,label,phone_number_id,waba_id,display_phone,access_token_encrypted,app_secret_encrypted,campaign_sender,verified_at) values ($1,$2,'Test',$3,'67890','test',$4,$5,$1='c',now())",
         [id, agency, number, encrypt('mock', `${id}:token`), encrypt(secret, `${id}:secret`)],
       );
     await db.query(
@@ -167,7 +167,19 @@ test('one WhatsApp consent connects AI interests to existing offers; decline pur
     await processConsentReplies();
     await inbound('I like flowers too', undefined, randomUUID(), '12346');
     await processConsentReplies();
-    assert.equal(sent.length, 2, 'another connected business does not request second consent');
+    assert.equal(sent.length, 2, 'a noncentral number cannot send consent messages');
+    assert.equal(
+      (await db.query("select count(*)::int n from conversations where connection_id='d'")).rows[0]
+        .n,
+      0,
+      'noncentral inbound messages are not collected',
+    );
+    await inbound('YES', '9647000000003', randomUUID(), '12346');
+    assert.equal(
+      await record('customer_consents', '9647000000003'),
+      undefined,
+      'only the central number can accept consent',
+    );
     await analyse();
     assert.equal(
       consentChoice('no', 'accepted'),

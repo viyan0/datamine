@@ -60,11 +60,12 @@ globalThis.fetch = async (url, init) => {
   assert.match(endpoint, /^https:\/\/graph\.facebook\.com\/[^/]+\/\d+\/messages$/);
   const message = JSON.parse(String(init?.body));
   assert.equal(message.to, phone);
+  assert.match(endpoint, /^https:\/\/graph\.facebook\.com\/[^/]+\/90001\/messages$/);
   assert.equal(message.type, 'text');
   sent.push(message.text.body);
   return Response.json({ messages: [{ id: `isolated-meta-${sent.length}` }] });
 };
-const recommendationBodies = () => sent.filter((body) => body.includes('WhatsApp: https://wa.me/'));
+const recommendationBodies = () => sent.filter((body) => body.startsWith('Datamine · '));
 const stage = (name: string) =>
   console.log(
     `PASS ${name} | AI calls=${aiCalls} | recommended offers=${recommendationBodies().length}`,
@@ -151,6 +152,8 @@ try {
       displayPhone: `+964 700 000 100${index}`,
       accessTokenEncrypted: encrypt('isolated-meta-only', `${id}:token`),
       appSecretEncrypted: encrypt(secret, `${id}:secret`),
+      campaignSender: id === 'origin',
+      verifiedAt: new Date(),
     });
   }
   const bike = (price: number) =>
@@ -196,9 +199,8 @@ try {
   );
   await analyzeAndRecommend();
   assert.equal(recommendationBodies().length, 1);
-  assert.ok(recommendationBodies()[0].includes('USD 180'));
-  assert.equal(recommendationBodies()[0].includes('USD 100'), false);
-  stage('repeated request selects the better-priced matching offer from another business');
+  assert.ok(recommendationBodies()[0].includes('USD 100'));
+  stage('central chat selects the best matching published offer including its own business');
 
   await inbound(
     'I am still interested in the same CityRide 7 bicycle in Erbil with that warranty.',
@@ -211,7 +213,7 @@ try {
   await inbound('MORE');
   await analyzeAndRecommend();
   assert.equal(recommendationBodies().length, 2);
-  assert.ok(recommendationBodies()[1].includes('USD 250'));
+  assert.ok(recommendationBodies()[1].includes('USD 180'));
   stage('MORE returns one next unseen offer');
 
   await inbound('STOP OFFER');

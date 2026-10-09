@@ -12,7 +12,7 @@ The linked project is **viki-0760/datamine**, with Neon Free PostgreSQL **datami
 
 Incoming webhooks, replies, business edits, and campaign actions publish a small queue wakeup. PostgreSQL still owns the jobs, leases, retry delays, and send claims. A bounded Vercel Function processes work, schedules another wake only when needed, and stops when idle. A secret-protected daily job recovers saved work after a missed queue publish. Webhooks return a retryable error if the wakeup fails; already-sent replies are still reported accurately. Manual bulk campaigns require the business to click Send. Automatic recommendations are separate: repeated interest can send one suitable published offer, followed by one more only on an explicit customer request.
 
-Neon and production secrets are configured. Confirm migration 0009 has run before serving this release. Record the deployed revision and controlled live test results in `DELIVERY.md`; automated checks alone do not verify the new flow with real providers.
+Neon and production secrets are configured. Confirm migrations through 0011 have run before serving this release. Record the deployed revision and controlled live test results in `DELIVERY.md`; automated checks alone do not verify the new flow with real providers.
 
 ## Render alternative
 
@@ -51,17 +51,17 @@ Phase 1 inbound ingestion commits synchronously; it does not depend on a worker 
 
 Render background workers require a paid plan, so the free demo Blueprint does not provision one. Failed health-check jobs retry with backoff and remain in pg-boss for inspection. Automatic AI analysis and campaigns use the companion process started by npm start, not this optional health worker. Jobs persist in PostgreSQL. SIGTERM stops new work; abandoned claims recover after 90 seconds. The free web service processes work only while awake; an always-on instance is needed for prompt background processing.
 
-## Connect real WhatsApp businesses
+## Connect the central Datamine number
 
 For this demo, use the existing **leadstest** Meta app (`1088621117427847`) in the **Leadstest** business portfolio, as selected by the owner. Replace its previous project's callback with the deployed Datamine `/api/webhooks/whatsapp` endpoint once the public service is healthy and the connection credentials are configured. Meta currently shows the `messages` subscription at Graph API v26.0; confirm the version and set `META_GRAPH_VERSION` when connecting. The test sender is **+1 (555) 632-3113**, phone ID `1328135173721537`, WABA ID `2248867165684591`. Use a verified recipient controlled by the owner. Temporary test tokens expire and must be refreshed before subsequent demos. Changing the callback disconnects incoming events from the old project; deleting that project's app, data, or hosting resources is not required.
 
 1. As central administrator, create each business with its type and optional category hints. Invite its owner from **Businesses**, then share the private invitation link through a trusted channel. There is no Team sidebar. Validate that the business account cannot access another business's CRM or campaigns, while the central administrator can view all businesses.
-2. An agency owner/admin opens **WhatsApp connections → Connect number** and supplies its existing Meta phone number ID, WABA ID, system-user token, and app secret. The server checks the phone belongs to the WABA using Meta's API before encrypting the credentials.
+2. The central administrator opens **WhatsApp → Connect number** and supplies the Datamine Meta phone number ID, WABA ID, system-user token, and app secret. The server checks the phone belongs to the WABA before encrypting the credentials. Select **Use this number** in the Datamine WhatsApp card. Only one verified connection can be the central sender; no business-number fallback is used.
 3. The workspace owner copies the callback URL and verification token from the connections page. Configure the callback in Meta and subscribe to the `messages` field for the appropriate app/WABA. Existing integrations may already use that callback; review or arrange event forwarding before replacing it.
-4. Send a controlled test text to each real number. The connection changes from **Credentials verified** to **Receiving events** only after a valid, signed callback. Inspect received messages and confirm agency routing.
+4. Send a controlled test text to the central number. The connection changes from **Credentials verified** to **Receiving events** only after a valid, signed callback. Consent and customer conversations belong to the central workspace. Businesses only need website accounts to publish offers; inbound messages to other configured numbers are not collected in this mode.
 5. Replay a webhook and confirm the stored message count does not increase.
 
-Provider verification and webhook processing are covered by mocked automated tests. The deployed test sender, live webhook, and a real incoming/outgoing WhatsApp conversation have also been verified; see DELIVERY.md for current live results and remaining pilot checks. Text replies use the customer-service window. Manual campaigns use each business's own sender and support static approved marketing templates, or text replies inside an open 24-hour window. New automatic recommendation acceptance is a separate check below.
+Provider verification and webhook processing are covered by mocked automated tests. The deployed test sender, live webhook, and a real incoming/outgoing WhatsApp conversation have also been verified; see DELIVERY.md for current live results and remaining pilot checks. All offers use the central sender and identify the seller. Manual campaigns support static approved marketing templates, or text replies inside the central number's open 24-hour window. Automatic recommendation acceptance is a separate check below.
 
 ## Enable conversation analysis
 
@@ -87,13 +87,13 @@ For controlled acceptance, use only businesses and customer numbers authorized f
 
 1. Sign in as the central administrator and verify access to every business. Accept an owner invitation from **Businesses**, then verify that owner's CRM, customer list, and campaigns exclude other businesses' private records.
 2. Send the first customer message, receive the consent notice, and reply YES once. Confirm analysis and customer details appear automatically. Pending consent must not trigger analysis or offers.
-3. Create a business campaign. Confirm AI matches only its own consenting customers and respects topic stops. Review the message and send through that business's sender. A real text reply requires an open 24-hour window; template delivery requires current approval. Confirm delivery callbacks.
-4. Explicitly publish a suitable offer from a different business using **Recommend across Datamine** and a future availability date. Send two genuine requests about that topic to the originating business. Confirm one relevant recommendation arrives from the originating number, includes supplier contact details, and does not expose the customer's contact to the supplier.
+3. Create a business campaign. Confirm AI matches only its own consenting customers and respects topic stops. Review the message and send through the central sender. A real text reply requires an open 24-hour window on that number; template delivery requires current approval. Confirm delivery callbacks.
+4. Open **Offers**, add a suitable offer with its price, language and future expiry, then save. It is immediately available to the recommendation engine, even if the supplier has no WhatsApp connection or own CRM customers. Send two genuine requests about that topic to Datamine's central number. Confirm one relevant recommendation arrives there, names the seller, keeps replies in the central chat and does not expose the customer's chat to the supplier.
 5. Send another ordinary topic question and confirm no extra automatic offer. Reply MORE and confirm at most one further unseen, suitable offer. If no suitable offer exists, nothing is sent.
 6. Reply STOP OFFER and confirm that topic stops while unrelated interests remain eligible. MORE must not resume a stopped topic. Use a controlled contact for STOP, STOP ALL, or DELETE MY DATA; confirm saved chats, profile, recommendations, and queued sends are removed, and subsequent messages are not collected until explicit re-consent.
-7. Unpublish or expire an offer and confirm it is excluded. Check that a closed customer-service window sends nothing and waits for a fresh message. No test should treat a pending template as approved.
+7. Archive or expire an offer and confirm it is excluded. Restore requires a valid future expiry. Check that a closed central customer-service window sends nothing and waits for a fresh message. No test should treat a pending template as approved.
 
-For a presentation, refresh the temporary Meta token if needed and have the controlled customer message the originating number shortly beforehand. Allow consent, analysis, and matching to finish. Publishing an offer does not guarantee a match or delivery.
+For a presentation, refresh the temporary Meta token if needed and have the controlled customer message the central number shortly beforehand. Allow consent, analysis, and matching to finish. Saving an offer does not broadcast by itself or guarantee a match or delivery.
 
 For isolated legacy local smoke scripts, `AUTOMATION_DISABLED=true` prevents background jobs from racing provider mocks. Restore normal startup afterward. Do not set this flag on the deployed demo unless intentionally pausing automation.
 

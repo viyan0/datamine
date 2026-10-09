@@ -16,6 +16,8 @@ import {
 import { moreRequestFollowsOffer, offerCommand } from '../src/lib/offer-preferences';
 import { ingestWebhook } from '../src/lib/webhook';
 import { syncCustomerInterests } from '../src/lib/consent';
+import { centralConnection } from '../src/lib/central-whatsapp';
+import { createProduct, updateProduct } from '../src/lib/products';
 
 test('automatic recommendations respect consent, one offer, more, topic stops and sender windows', async (t) => {
   const memory = await PGlite.create();
@@ -37,6 +39,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
   let invalidId = false;
   let verboseReason = false;
   let duringRank: (() => Promise<void>) | null = null;
+  let duringSend: (() => Promise<void>) | null = null;
   globalThis.fetch = async (url, init) => {
     if (String(url) === 'https://openrouter.ai/api/v1/chat/completions') {
       const input = JSON.parse(JSON.parse(String(init?.body)).messages[1].content) as {
@@ -48,16 +51,22 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         messages: { id: string; body: string }[];
         offers: { id: string; text: string }[];
       };
-      assert.ok(input.offers.every((o) => !['private', 'expired'].includes(o.id)));
+      assert.ok(
+        input.offers.every((o) => !['private', 'expired', 'archived-product'].includes(o.id)),
+      );
       const latest = input.messages.find((m) => m.id === input.latestMessageId)!;
       const naturalMore = /another offer/i.test(latest.body);
       const stopTopic = /stop phones offers/i.test(latest.body);
       const topic =
         input.mode === 'more' || naturalMore
           ? input.previousTopic
-          : /flowers/i.test(latest.body)
-            ? 'flowers'
-            : 'phones';
+          : /bikes/i.test(latest.body)
+            ? 'bikes'
+            : /chairs/i.test(latest.body)
+              ? 'chairs'
+              : /flowers/i.test(latest.body)
+                ? 'flowers'
+                : 'phones';
       const evidence = input.messages
         .filter((m) => m.body.toLowerCase().includes(topic))
         .map((m) => ({ messageId: m.id, quote: m.body }));
@@ -100,6 +109,16 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
     assert.equal(String(url), 'https://graph.facebook.com/v26.0/12345/messages');
     sends.push(JSON.parse(String(init?.body)));
     assert.ok(sends.at(-1)!.text.body.length <= 4096, 'WhatsApp text length limit');
+    assert.doesNotMatch(
+      sends.at(-1)!.text.body,
+      /wa.me\//,
+      'recommendation replies stay in the central chat',
+    );
+    if (duringSend) {
+      const work = duringSend;
+      duringSend = null;
+      await work();
+    }
     if (ambiguous) throw new Error('Lost response');
     return Response.json({ messages: [{ id: `recommendation-${sends.length}` }] });
   };
@@ -111,6 +130,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
     await db.insert(schema.agencies).values([
       { id: 'origin', name: 'Original business', slug: 'origin' },
       { id: 'supplier', name: 'Supplier business', slug: 'supplier' },
+      { id: 'no-whatsapp', name: 'Business without WhatsApp', slug: 'no-whatsapp' },
     ]);
     await db.insert(schema.connections).values([
       {
@@ -122,6 +142,8 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         displayPhone: '+9647500000001',
         accessTokenEncrypted: encrypt('test', 'origin-sender:token'),
         appSecretEncrypted: encrypt('test-secret', 'origin-sender:secret'),
+        campaignSender: true,
+        verifiedAt: new Date(),
       },
       {
         id: 'supplier-sender',
@@ -132,18 +154,23 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         displayPhone: '+9647500000002',
         accessTokenEncrypted: encrypt('test', 'supplier-sender:token'),
         appSecretEncrypted: 'unused',
+        verifiedAt: new Date(),
       },
     ]);
     await db.insert(schema.campaigns).values(
-      ['phones-a', 'phones-b', 'flowers', 'own', 'private', 'expired'].map((id) => ({
+      ['phones-a', 'phones-b', 'flowers', 'own', 'no-phone', 'private', 'expired'].map((id) => ({
         id,
-        agencyId: id === 'own' ? 'origin' : 'supplier',
+        agencyId: id === 'own' ? 'origin' : id === 'no-phone' ? 'no-whatsapp' : 'supplier',
         createdBy: 'owner',
         title: id,
         offerText:
-          id === 'flowers'
-            ? 'Fresh flowers bouquet for 25 USD.'
-            : 'New phones with 12 month warranty for 200 USD.',
+          id === 'own'
+            ? 'Central business bikes for 80 USD.'
+            : id === 'no-phone'
+              ? 'Office chairs for 50 USD.'
+              : id === 'flowers'
+                ? 'Fresh flowers bouquet for 25 USD.'
+                : 'New phones with 12 month warranty for 200 USD.',
         locale: 'en',
         status: 'complete',
         networkEnabled: id !== 'private',
@@ -245,7 +272,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         await processRecommendations(5);
         assert.equal(count('repeat'), 1);
         assert.match(sends.at(-1)!.text.body, /Supplier business/);
-        assert.match(sends.at(-1)!.text.body, /wa.me\/9647500000002/);
+        assert.match(sends.at(-1)!.text.body, /Reply here for details/);
         assert.match(sends.at(-1)!.text.body, /STOP OFFER/);
         await db.transaction((tx) => scheduleRecommendation(tx, 'repeat'));
         await processRecommendations(5);
@@ -256,6 +283,238 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
           1,
           'neither a replay nor another inquiry sends a second offer',
         );
+      },
+    );
+    await t.test(
+      'central chat can recommend its own business and suppliers without WhatsApp',
+      async () => {
+        await customer('central-business');
+        await inbound('central-business', 'I want bikes');
+        await inbound('central-business', 'Which bikes are available?');
+        await processRecommendations(5);
+        assert.equal(count('central-business'), 1);
+        assert.match(sends.at(-1)!.text.body, /Original business/);
+        assert.match(sends.at(-1)!.text.body, /Central business bikes/);
+        await customer('no-supplier-phone');
+        await inbound('no-supplier-phone', 'I want chairs');
+        await inbound('no-supplier-phone', 'Which chairs are available?');
+        await processRecommendations(5);
+        assert.equal(count('no-supplier-phone'), 1);
+        assert.match(sends.at(-1)!.text.body, /Business without WhatsApp/);
+        assert.match(sends.at(-1)!.text.body, /Reply here for details/);
+        assert.doesNotMatch(sends.at(-1)!.text.body, /wa.me\//);
+      },
+    );
+    await t.test('a business inbox cannot substitute for the central customer window', async () => {
+      await customer('central-closed', 'accepted', true);
+      await inbound('central-closed', 'I want phones', true);
+      await inbound('central-closed', 'Which phones are available?', true);
+      await db.insert(schema.conversations).values({
+        id: 'business-open',
+        agencyId: 'supplier',
+        connectionId: 'supplier-sender',
+        contactPhone: 'central-closed',
+        name: 'Customer',
+        lastInboundAt: new Date(),
+        lastMessageAt: new Date(),
+        analysisStatus: 'complete',
+      });
+      await db.transaction((tx) => scheduleRecommendation(tx, 'business-open'));
+      await processRecommendations(5);
+      assert.equal(count('central-closed'), 0);
+      await customer('business-only');
+      await db.delete(schema.conversations).where(eq(schema.conversations.id, 'business-only'));
+      await db.insert(schema.conversations).values({
+        id: 'business-only',
+        agencyId: 'supplier',
+        connectionId: 'supplier-sender',
+        contactPhone: 'business-only',
+        name: 'Customer',
+        lastInboundAt: new Date(),
+        lastMessageAt: new Date(),
+        analysisStatus: 'complete',
+      });
+      await db.insert(schema.messages).values(
+        ['I want phones', 'Which phones are available?'].map((body) => ({
+          id: randomUUID(),
+          agencyId: 'supplier',
+          connectionId: 'supplier-sender',
+          contactPhone: 'business-only',
+          direction: 'inbound',
+          type: 'text',
+          body,
+          providerTimestamp: new Date(),
+        })),
+      );
+      await db.transaction((tx) => scheduleRecommendation(tx, 'business-only'));
+      await processRecommendations(5);
+      assert.equal(count('business-only'), 0);
+      assert.equal(
+        (
+          await db
+            .select()
+            .from(schema.recommendationJobs)
+            .where(eq(schema.recommendationJobs.profileId, 'business-only'))
+        ).length,
+        0,
+      );
+    });
+    await t.test(
+      'central sender must be unambiguous and verified, including after work was queued',
+      async () => {
+        assert.equal((await centralConnection())?.id, 'origin-sender');
+        await customer('central-changed');
+        await inbound('central-changed', 'I want phones');
+        await inbound('central-changed', 'Which phones are available?');
+        await db
+          .update(schema.connections)
+          .set({ campaignSender: true })
+          .where(eq(schema.connections.id, 'supplier-sender'));
+        assert.equal(await centralConnection(), null);
+        await processRecommendations(5);
+        assert.equal(count('central-changed'), 0);
+        await db
+          .update(schema.connections)
+          .set({ campaignSender: false })
+          .where(eq(schema.connections.id, 'supplier-sender'));
+        await db
+          .update(schema.connections)
+          .set({ verifiedAt: null })
+          .where(eq(schema.connections.id, 'origin-sender'));
+        assert.equal(await centralConnection(), null);
+        await db
+          .update(schema.connections)
+          .set({ verifiedAt: new Date(), status: 'disabled' })
+          .where(eq(schema.connections.id, 'origin-sender'));
+        assert.equal(await centralConnection(), null);
+        await db
+          .update(schema.connections)
+          .set({ status: 'receiving' })
+          .where(eq(schema.connections.id, 'origin-sender'));
+        assert.equal((await centralConnection())?.id, 'origin-sender');
+      },
+    );
+    await t.test(
+      'an archived linked product is excluded even when its publication flag is stale',
+      async () => {
+        await db.insert(schema.products).values({
+          id: 'archived',
+          agencyId: 'supplier',
+          name: 'Archived phones',
+          description: '',
+          price: '10.00',
+          currency: 'USD',
+          active: false,
+        });
+        await db.insert(schema.campaigns).values({
+          id: 'archived-product',
+          agencyId: 'supplier',
+          createdBy: 'owner',
+          title: 'Archived phones',
+          offerText: 'Archived phones for 10 USD.',
+          locale: 'en',
+          productId: 'archived',
+          networkEnabled: true,
+          networkExpiresAt: new Date(Date.now() + 86400000),
+          status: 'ready',
+        });
+        await customer('archive-guard');
+        await inbound('archive-guard', 'I want phones');
+        await inbound('archive-guard', 'Which phones are available?');
+        await processRecommendations(5);
+        assert.equal(count('archive-guard'), 1);
+        assert.doesNotMatch(sends.at(-1)!.text.body, /Archived phones/);
+      },
+    );
+    await t.test(
+      'a saved product is immediately recommendable and stays locked through submission',
+      async () => {
+        const product = await createProduct(
+          { id: 'owner', platformRole: 'admin' },
+          {
+            agencyId: 'no-whatsapp',
+            name: 'Ergonomic chairs',
+            description: 'Adjustable office chairs.',
+            price: '49.00',
+            currency: 'USD',
+            locale: 'en',
+            expiresAt: new Date(Date.now() + 86400000).toISOString(),
+          },
+        );
+        const [catalog] = await db
+          .select()
+          .from(schema.campaigns)
+          .where(eq(schema.campaigns.productId, product.id));
+        assert.equal(catalog.catalogOnly, true);
+        assert.equal(catalog.status, 'ready');
+        assert.equal(catalog.analysis, null);
+        await customer('saved-catalog');
+        await inbound('saved-catalog', 'I want chairs');
+        await inbound('saved-catalog', 'Which chairs are available?');
+        let lockChecked = false;
+        duringSend = async () => {
+          // Direct access inspects the one PostgreSQL backend while the external call is paused.
+          // PGlite's socket multiplexing cannot model separate backend lock contention.
+          const locks = await memory.query<{ relation: string; mode: string }>(
+            "select relation::regclass::text as relation, mode from pg_locks where relation in ('products'::regclass, 'campaigns'::regclass, 'whatsapp_connections'::regclass)",
+          );
+          assert.ok(
+            locks.rows.some((lock) => lock.relation === 'products' && lock.mode === 'RowShareLock'),
+          );
+          assert.ok(
+            locks.rows.some(
+              (lock) => lock.relation === 'campaigns' && lock.mode === 'RowShareLock',
+            ),
+          );
+          assert.ok(
+            locks.rows.some(
+              (lock) => lock.relation === 'whatsapp_connections' && lock.mode === 'RowShareLock',
+            ),
+          );
+          lockChecked = true;
+        };
+        await processRecommendations(5);
+        assert.equal(
+          lockChecked,
+          true,
+          'product and publication must stay locked through the external call',
+        );
+        assert.equal(count('saved-catalog'), 1);
+        assert.match(sends.at(-1)!.text.body, /Ergonomic chairs/);
+        assert.match(sends.at(-1)!.text.body, /49.00 USD/);
+        assert.match(sends.at(-1)!.text.body, /Reply here for details/);
+      },
+    );
+    await t.test(
+      'archiving a product while AI ranks prevents submission of the stale offer',
+      async () => {
+        const product = await createProduct(
+          { id: 'owner', platformRole: 'admin' },
+          {
+            agencyId: 'no-whatsapp',
+            name: 'Premium chairs',
+            description: 'Office chairs with arms.',
+            price: '39.00',
+            currency: 'USD',
+            locale: 'en',
+            expiresAt: new Date(Date.now() + 86400000).toISOString(),
+          },
+        );
+        await customer('archive-race');
+        await inbound('archive-race', 'I want chairs');
+        await inbound('archive-race', 'Which chairs are available?');
+        duringRank = async () => {
+          await updateProduct({ id: 'owner', platformRole: 'admin' }, product.id, {
+            active: false,
+          });
+        };
+        await processRecommendations(5);
+        assert.equal(count('archive-race'), 0);
+        const [catalog] = await db
+          .select()
+          .from(schema.campaigns)
+          .where(eq(schema.campaigns.productId, product.id));
+        assert.equal(catalog.networkEnabled, false);
       },
     );
     await t.test('MORE sends one unseen offer then waits again', async () => {
@@ -375,6 +634,14 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         .from(schema.customerConsents)
         .where(eq(schema.customerConsents.phone, 'repeat'));
       assert.equal(consent.status, 'accepted');
+      const catalogs = await db
+        .select()
+        .from(schema.campaigns)
+        .where(eq(schema.campaigns.catalogOnly, true));
+      assert.ok(
+        catalogs.every((offer) => offer.status === 'ready' && offer.dueAt === null),
+        'topic preferences do not queue manual audience matching for catalog offers',
+      );
       await inbound('repeat', 'MORE');
       await processRecommendations(5);
       assert.equal(count('repeat'), 3);

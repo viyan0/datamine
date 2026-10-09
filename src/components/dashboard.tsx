@@ -17,6 +17,7 @@ import {
   Menu,
   MessageCircle,
   Plus,
+  Tags,
   Radio,
   Search,
   Settings2,
@@ -36,6 +37,8 @@ import { authClient } from '@/lib/auth-client';
 import { CustomerDirectory } from './customer-directory';
 import { BusinessSettings } from './business-settings';
 import { Campaigns } from './campaigns';
+import { Products } from './products';
+import { CentralWhatsapp } from './central-whatsapp';
 import { AgencyInbox } from './inbox';
 import { DashboardCharts } from './dashboard-charts';
 
@@ -44,6 +47,7 @@ const nav = [
   { key: 'overview', icon: LayoutGrid },
   { key: 'inbox', icon: Inbox },
   { key: 'customers', icon: Users },
+  { key: 'offers', label: 'catalogTitle', icon: Tags },
   { key: 'campaigns', icon: Megaphone },
   { key: 'agencies', icon: Building2 },
   { key: 'connections', icon: MessageCircle },
@@ -107,7 +111,9 @@ export function Dashboard({
           </thead>
           <tbody>
             {items.map((a, i) => {
-              const count = data.connections.filter((c) => c.agencyId === a.id).length;
+              const count = data.centralWhatsapp
+                ? 1
+                : data.connections.filter((c) => c.agencyId === a.id).length;
               return (
                 <tr key={a.id}>
                   <td>
@@ -176,7 +182,7 @@ export function Dashboard({
           </button>
         </div>
         <nav aria-label={t('workspace')}>
-          {nav.map(({ key, icon: Icon }) => (
+          {nav.map(({ key, label, icon: Icon }) => (
             <Link
               key={key}
               href={`${root}${key === 'overview' ? '' : `/${key}`}`}
@@ -187,7 +193,7 @@ export function Dashboard({
               <span className="nav-icon">
                 <Icon size={18} />
               </span>
-              <span>{t(key)}</span>
+              <span>{t(label || key)}</span>
               {key === 'agencies' && <span className="nav-count">{data.agencies.length}</span>}
             </Link>
           ))}
@@ -227,7 +233,7 @@ export function Dashboard({
             </button>
             <span>{t('workspace')}</span>
             <ChevronRight size={13} />
-            <b>{t(section)}</b>
+            <b>{t(section === 'offers' ? 'catalogTitle' : section)}</b>
           </div>
           <div className="topbar-right">
             <LanguageSwitch />
@@ -250,7 +256,7 @@ export function Dashboard({
         >
           <div className="page-heading">
             <div>
-              <h1>{t(section)}</h1>
+              <h1>{t(section === 'offers' ? 'catalogTitle' : section)}</h1>
             </div>
             {section === 'overview' ? (
               <Link className="btn btn-primary" href={`${root}/inbox`}>
@@ -272,7 +278,7 @@ export function Dashboard({
                 </Button>
               )
             ) : section === 'connections' ? (
-              manage && (
+              data.user.platformAdmin && (
                 <Button onClick={() => open('connection')}>
                   <Plus size={17} />
                   {t('connectNumber')}
@@ -289,6 +295,7 @@ export function Dashboard({
               </button>
             </div>
           )}
+          {section === 'offers' && <Products data={data} demo={demo} />}
           {section === 'campaigns' && <Campaigns data={data} demo={demo} />}
           {section === 'customers' && <CustomerDirectory demo={demo} />}
           {section === 'inbox' && <AgencyInbox data={data} demo={demo} />}
@@ -380,38 +387,41 @@ export function Dashboard({
           )}
           {section === 'connections' && (
             <>
-              <div className="connection-grid">
-                {data.connections.map((c, i) => (
-                  <article className="panel connection-card" key={c.id}>
-                    <div className="connection-card-top">
-                      <span className="stat-icon mint">
-                        <MessageCircle size={22} />
-                      </span>
-                      <span
-                        className={`badge ${c.status === 'receiving' ? 'badge-green' : 'badge-neutral'}`}
-                      >
-                        <i />
-                        {t(c.status)}
-                      </span>
-                    </div>
-                    <h2>{c.label}</h2>
-                    <p className="phone-display" dir="ltr">
-                      {c.displayPhone}
-                    </p>
-                    <div className="connection-agency">
-                      <Avatar name={c.agencyName} index={i} />
-                      <span>{c.agencyName}</span>
-                    </div>
-                    <footer>
-                      <Radio size={14} />
-                      {c.lastWebhookAt
-                        ? t('lastReceived', { date: date(c.lastWebhookAt) })
-                        : t('webhookWaiting')}
-                    </footer>
-                  </article>
-                ))}
-              </div>
-              {!data.connections.length && (
+              <CentralWhatsapp data={data} demo={demo} />
+              {data.user.platformAdmin && (
+                <div className="connection-grid">
+                  {data.connections.map((c, i) => (
+                    <article className="panel connection-card" key={c.id}>
+                      <div className="connection-card-top">
+                        <span className="stat-icon mint">
+                          <MessageCircle size={22} />
+                        </span>
+                        <span
+                          className={`badge ${c.status === 'receiving' ? 'badge-green' : 'badge-neutral'}`}
+                        >
+                          <i />
+                          {t(c.status)}
+                        </span>
+                      </div>
+                      <h2>{c.label}</h2>
+                      <p className="phone-display" dir="ltr">
+                        {c.displayPhone}
+                      </p>
+                      <div className="connection-agency">
+                        <Avatar name={c.agencyName} index={i} />
+                        <span>{c.agencyName}</span>
+                      </div>
+                      <footer>
+                        <Radio size={14} />
+                        {c.lastWebhookAt
+                          ? t('lastReceived', { date: date(c.lastWebhookAt) })
+                          : t('webhookWaiting')}
+                      </footer>
+                    </article>
+                  ))}
+                </div>
+              )}
+              {data.user.platformAdmin && !data.connections.length && (
                 <section className="panel">
                   <Empty
                     icon={MessageCircle}
@@ -428,7 +438,9 @@ export function Dashboard({
                 </section>
               )}
               <WebhookPanel demo={demo} admin={data.user.platformAdmin} />
-              {!demo && data.agencies.length > 0 && <MessagePanel data={data} />}
+              {!demo && data.user.platformAdmin && data.agencies.length > 0 && (
+                <MessagePanel data={data} />
+              )}
             </>
           )}
           {section === 'settings' && (

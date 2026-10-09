@@ -22,6 +22,9 @@ import { POST as accept } from '../src/app/api/invitations/accept/route';
 import { GET as customers } from '../src/app/api/customers/route';
 import { GET as offers, POST as createOffer } from '../src/app/api/campaigns/route';
 import { POST as changeOffer } from '../src/app/api/campaigns/[id]/route';
+import { GET as products, POST as createProduct } from '../src/app/api/products/route';
+import { PATCH as updateProduct } from '../src/app/api/products/[id]/route';
+import type { ProductView } from '../src/lib/product-types';
 
 // Real request cookies and route guards, without starting a second Next dev build.
 async function dispatch(request: NextRequest) {
@@ -65,6 +68,10 @@ async function dispatch(request: NextRequest) {
       if (url.pathname === '/api/invitations') return invite(request);
       if (url.pathname === '/api/invitations/accept') return accept(request);
       if (url.pathname === '/api/customers') return customers();
+      if (url.pathname === '/api/products')
+        return request.method === 'GET' ? products() : createProduct(request);
+      const productId = url.pathname.match(/^\/api\/products\/([^/]+)$/)?.[1];
+      if (productId) return updateProduct(request, { params: Promise.resolve({ id: productId }) });
       if (url.pathname === '/api/campaigns')
         return request.method === 'GET' ? offers() : createOffer(request);
       const id = url.pathname.match(/^\/api\/campaigns\/([^/]+)$/)?.[1];
@@ -75,7 +82,7 @@ async function dispatch(request: NextRequest) {
   );
 }
 
-test('HTTP business setup and campaign permissions use real authenticated sessions', async () => {
+test('HTTP business setup and campaign permissions use real authenticated sessions', async (t) => {
   const memory = await PGlite.create();
   const database = new PGLiteSocketServer({
     db: memory,
@@ -126,9 +133,9 @@ test('HTTP business setup and campaign permissions use real authenticated sessio
     assert.equal(new URL(String(url)).origin, origin, 'Test must never call external services');
     return originalFetch(url, options);
   };
-  const call = (path: string, cookie = '', body?: unknown) =>
+  const call = (path: string, cookie = '', body?: unknown, method?: string) =>
     fetch(`${origin}${path}`, {
-      method: body === undefined ? 'GET' : 'POST',
+      method: method || (body === undefined ? 'GET' : 'POST'),
       headers: {
         origin,
         cookie,
@@ -289,6 +296,262 @@ test('HTTP business setup and campaign permissions use real authenticated sessio
       ['Customer 0'],
     );
     assert.equal((await (await call('/api/customers', central)).json()).profiles.length, 2);
+    await t.test(
+      'product CRUD is tenant scoped and campaign details use the saved catalog',
+      async () => {
+        assert.equal((await call('/api/products')).status, 401);
+        const productInput = {
+          agencyId: agencyIds[0],
+          name: 'Rose bouquet',
+          description: 'Twelve fresh roses',
+          price: '25000',
+        };
+        const created = await call('/api/products', owner, productInput);
+        assert.equal(created.status, 201);
+        const product: ProductView = (await created.json()).product;
+        assert.equal(product.price, '25000.00');
+        assert.equal(product.currency, 'IQD');
+        assert.equal(product.active, true);
+        assert.equal(product.locale, 'en');
+        assert.ok(new Date(product.expiresAt) > new Date());
+        const catalog = async () =>
+          (
+            await db
+              .select()
+              .from(schema.campaigns)
+              .where(eq(schema.campaigns.productId, product.id))
+          ).find((c) => c.catalogOnly)!;
+        const liveCatalog = await catalog();
+        assert.equal(liveCatalog.networkEnabled, true);
+        assert.equal(liveCatalog.networkExpiresAt?.toISOString(), product.expiresAt);
+        assert.equal(liveCatalog.status, 'ready');
+        assert.equal(liveCatalog.analysis, null);
+        assert.equal(liveCatalog.dueAt, null);
+        assert.equal(
+          (await (await call('/api/campaigns', owner)).json()).campaigns.some(
+            (c: { id: string }) => c.id === liveCatalog.id,
+          ),
+          false,
+        );
+        for (const expiresAt of [
+          new Date(Date.now() - 1000).toISOString(),
+          new Date(Date.now() + 91 * 86400000).toISOString(),
+        ])
+          assert.equal(
+            (await call('/api/products', owner, { ...productInput, expiresAt })).status,
+            422,
+          );
+        assert.equal(
+          (await call('/api/products', owner, { ...productInput, locale: 'invalid' })).status,
+          400,
+        );
+        assert.equal(
+          (await call('/api/products', owner, { ...productInput, agencyId: agencyIds[1] })).status,
+          403,
+        );
+        assert.equal((await call('/api/products', viewer, productInput)).status, 403);
+        const other = await call('/api/products', central, {
+          ...productInput,
+          agencyId: agencyIds[1],
+        });
+        assert.equal(other.status, 201);
+        const otherId = (await other.json()).product.id;
+        for (const invalidPrice of ['-1', '1.234', '1e6', '10000000000', 'NaN', 123]) {
+          assert.equal(
+            (await call('/api/products', owner, { ...productInput, price: invalidPrice })).status,
+            400,
+          );
+        }
+        assert.equal(
+          (await call('/api/products', owner, { ...productInput, currency: 'I' })).status,
+          400,
+        );
+        assert.equal((await (await call('/api/products', central)).json()).products.length, 2);
+        for (const cookie of [owner, viewer]) {
+          assert.deepEqual(
+            (await (await call('/api/products', cookie)).json()).products.map(
+              (p: ProductView) => p.id,
+            ),
+            [product.id],
+          );
+        }
+        assert.equal(
+          (await call(`/api/products/${otherId}`, owner, { price: '1' }, 'PATCH')).status,
+          403,
+        );
+        assert.equal(
+          (await call(`/api/products/${product.id}`, viewer, { active: false }, 'PATCH')).status,
+          403,
+        );
+        assert.equal(
+          (await call(`/api/products/${product.id}`, owner, { agencyId: agencyIds[1] }, 'PATCH'))
+            .status,
+          400,
+        );
+        assert.equal((await call(`/api/products/${product.id}`, owner, {}, 'PATCH')).status, 400);
+        const changed = await call(
+          `/api/products/${product.id}`,
+          owner,
+          { price: '19.5', currency: 'usd' },
+          'PATCH',
+        );
+        assert.equal(changed.status, 200);
+        assert.equal((await changed.json()).product.price, '19.50');
+        assert.equal((await catalog()).id, liveCatalog.id);
+        assert.equal(
+          (await catalog()).offerText,
+          'Rose bouquet\n\nTwelve fresh roses\n\nPrice: 19.50 USD',
+        );
+        const catalogOffer = await call('/api/campaigns', owner, {
+          agencyId: agencyIds[0],
+          productId: product.id,
+          title: 'Wrong client title',
+          offerText: 'Wrong client price USD 1',
+          locale: 'en',
+          networkEnabled: true,
+          networkExpiresAt: new Date(Date.now() + 86400000).toISOString(),
+        });
+        assert.equal(catalogOffer.status, 201);
+        const offerId = (await catalogOffer.json()).id;
+        const [saved] = await db
+          .select()
+          .from(schema.campaigns)
+          .where(eq(schema.campaigns.id, offerId));
+        assert.equal(saved.title, 'Rose bouquet');
+        assert.equal(saved.offerText, 'Rose bouquet\n\nTwelve fresh roses\n\nPrice: 19.50 USD');
+        assert.equal(saved.productId, product.id);
+        assert.equal(
+          (
+            await call('/api/campaigns', owner, {
+              agencyId: agencyIds[0],
+              productId: otherId,
+              locale: 'en',
+            })
+          ).status,
+          404,
+        );
+        assert.equal(
+          (await call(`/api/products/${product.id}`, central, { price: '20' }, 'PATCH')).status,
+          200,
+        );
+        const [snapshot] = await db
+          .select()
+          .from(schema.campaigns)
+          .where(eq(schema.campaigns.id, offerId));
+        assert.equal(snapshot.offerText, saved.offerText);
+        assert.match((await catalog()).offerText, /Price: 20\.00 USD/);
+        assert.equal(
+          (await call(`/api/products/${product.id}`, owner, { active: false }, 'PATCH')).status,
+          200,
+        );
+        const [archivedOffer] = await db
+          .select()
+          .from(schema.campaigns)
+          .where(eq(schema.campaigns.id, offerId));
+        assert.equal(archivedOffer.networkEnabled, false);
+        assert.equal(archivedOffer.networkExpiresAt, null);
+        assert.equal((await catalog()).networkEnabled, false);
+        assert.equal(
+          (
+            await call('/api/campaigns', owner, {
+              agencyId: agencyIds[0],
+              productId: product.id,
+              locale: 'en',
+            })
+          ).status,
+          409,
+        );
+        const staleExpiry = new Date(Date.now() - 1000).toISOString();
+        assert.equal(
+          (await call(`/api/products/${product.id}`, owner, { expiresAt: staleExpiry }, 'PATCH'))
+            .status,
+          200,
+        );
+        assert.equal(
+          (await call(`/api/products/${product.id}`, owner, { active: true }, 'PATCH')).status,
+          422,
+        );
+        assert.equal((await catalog()).networkEnabled, false, 'failed activation rolls back');
+        const nextExpiry = new Date(Date.now() + 2 * 86400000).toISOString();
+        assert.equal(
+          (
+            await call(
+              `/api/products/${product.id}`,
+              owner,
+              { active: true, locale: 'ar', expiresAt: nextExpiry },
+              'PATCH',
+            )
+          ).status,
+          200,
+        );
+        const restored = await catalog();
+        assert.equal(restored.id, liveCatalog.id);
+        assert.equal(restored.networkEnabled, true);
+        assert.equal(restored.locale, 'ar');
+        assert.equal(restored.networkExpiresAt?.toISOString(), nextExpiry);
+        assert.match(restored.offerText, /السعر: 20\.00 USD/);
+        assert.equal(
+          (await db.select().from(schema.campaigns).where(eq(schema.campaigns.id, offerId)))[0]
+            .networkEnabled,
+          false,
+          'restoring the catalog does not republish manual campaigns',
+        );
+        assert.equal(
+          (
+            await db
+              .select()
+              .from(schema.campaigns)
+              .where(eq(schema.campaigns.productId, product.id))
+          ).filter((c) => c.catalogOnly).length,
+          1,
+        );
+
+        const freshBusiness = await call('/api/agencies', central, {
+          name: 'New supplier',
+          slug: 'new-supplier',
+          locale: 'en',
+        });
+        assert.equal(freshBusiness.status, 201);
+        const freshAgencyId = (await freshBusiness.json()).id;
+        const freshProduct = await call('/api/products', central, {
+          ...productInput,
+          agencyId: freshAgencyId,
+        });
+        assert.equal(freshProduct.status, 201);
+        const freshProductId = (await freshProduct.json()).product.id;
+        const [freshCatalog] = await db
+          .select()
+          .from(schema.campaigns)
+          .where(eq(schema.campaigns.productId, freshProductId));
+        assert.equal(
+          freshCatalog.networkEnabled,
+          true,
+          'suppliers with no customers can publish immediately',
+        );
+        assert.equal(freshCatalog.catalogOnly, true);
+        assert.equal(
+          (
+            await db
+              .select()
+              .from(schema.conversations)
+              .where(eq(schema.conversations.agencyId, freshAgencyId))
+          ).length,
+          0,
+        );
+        const copy = await call('/api/campaigns', owner, {
+          agencyId: agencyIds[0],
+          productId: product.id,
+          locale: 'ar',
+        });
+        assert.equal(copy.status, 201);
+        const [manualCopy] = await db
+          .select()
+          .from(schema.campaigns)
+          .where(eq(schema.campaigns.id, (await copy.json()).id));
+        assert.equal(manualCopy.networkEnabled, false);
+        assert.equal(manualCopy.catalogOnly, false);
+      },
+    );
   } finally {
     globalThis.fetch = originalFetch;
     await new Promise<void>((resolve) => server.close(() => resolve()));

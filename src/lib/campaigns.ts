@@ -6,7 +6,6 @@ import {
   agencies,
   campaigns,
   campaignRecipients,
-  connections,
   sharedProfiles,
   messages,
   conversations,
@@ -22,6 +21,8 @@ import { campaignReplyBody } from './campaign-delivery';
 import { marketingTemplates } from './meta-templates';
 import type { ApprovedTemplate } from './template-types';
 import type { CampaignView } from './campaign-types';
+import { centralConnection } from './central-whatsapp';
+import { getActiveProduct, isProductActive } from './products';
 
 type Campaign = typeof campaigns.$inferSelect;
 export function networkAvailability(enabled: boolean, expiresAt?: string | null) {
@@ -38,17 +39,23 @@ export function networkAvailability(enabled: boolean, expiresAt?: string | null)
 }
 
 export async function publishCampaign(id: string, enabled: boolean, expiresAt?: string | null) {
-  const [updated] = await getDb()
-    .update(campaigns)
-    .set(networkAvailability(enabled, expiresAt))
-    .where(
-      and(
-        eq(campaigns.id, id),
-        inArray(campaigns.status, ['ready', 'matching', 'error', 'sending', 'complete']),
-      ),
-    )
-    .returning({ id: campaigns.id });
-  if (!updated) throw new HttpError(409, 'campaignLocked');
+  await getDb().transaction(async (tx) => {
+    const [campaign] = await tx.select().from(campaigns).where(eq(campaigns.id, id));
+    // Serialize with archive in the same product -> campaign order.
+    if (enabled && campaign?.productId)
+      await getActiveProduct(campaign.agencyId, campaign.productId, tx);
+    const [updated] = await tx
+      .update(campaigns)
+      .set(networkAvailability(enabled, expiresAt))
+      .where(
+        and(
+          eq(campaigns.id, id),
+          inArray(campaigns.status, ['ready', 'matching', 'error', 'sending', 'complete']),
+        ),
+      )
+      .returning({ id: campaigns.id });
+    if (!updated) throw new HttpError(409, 'campaignLocked');
+  });
 }
 
 function sameTemplate(a: Campaign['template'] | undefined, b: Campaign['template']) {
@@ -61,6 +68,14 @@ function sameTemplate(a: Campaign['template'] | undefined, b: Campaign['template
     a.language === b.language &&
     a.body === b.body
   );
+}
+async function checkTemplateSeller(c: Campaign, template: { body: string }) {
+  const [business] = await getDb()
+    .select({ name: agencies.name })
+    .from(agencies)
+    .where(eq(agencies.id, c.agencyId));
+  if (!business || !template.body.toLocaleLowerCase().includes(business.name.toLocaleLowerCase()))
+    throw new HttpError(422, 'templateSellerMissing');
 }
 const audienceSchema = z.strictObject({
   summary: z.string().min(1).max(800),
@@ -139,7 +154,12 @@ export async function listCampaigns(agencyIds: string[], admin: boolean): Promis
     .select({ c: campaigns, agencyName: agencies.name })
     .from(campaigns)
     .innerJoin(agencies, eq(agencies.id, campaigns.agencyId))
-    .where(admin ? undefined : inArray(campaigns.agencyId, agencyIds))
+    .where(
+      and(
+        eq(campaigns.catalogOnly, false),
+        admin ? undefined : inArray(campaigns.agencyId, agencyIds),
+      ),
+    )
     .orderBy(desc(campaigns.createdAt))
     .limit(50);
   return Promise.all(
@@ -213,33 +233,31 @@ export async function listCampaigns(agencyIds: string[], admin: boolean): Promis
   );
 }
 export async function campaignSender(agencyId?: string, preferredSenderId?: string | null) {
-  const [sender] = await getDb()
-    .select()
-    .from(connections)
-    .where(
-      agencyId
-        ? and(
-            eq(connections.agencyId, agencyId),
-            preferredSenderId ? eq(connections.id, preferredSenderId) : undefined,
-          )
-        : eq(connections.campaignSender, true),
-    )
-    .orderBy(desc(connections.campaignSender), connections.createdAt, connections.id)
-    .limit(1);
-  return sender;
+  void agencyId;
+  const sender = await centralConnection();
+  return sender && (!preferredSenderId || preferredSenderId === sender.id) ? sender : undefined;
 }
-export async function senderTemplates(agencyId?: string, senderId?: string | null) {
+export async function senderTemplates(
+  agencyId?: string,
+  senderId?: string | null,
+  campaignId?: string,
+) {
   const sender = await campaignSender(agencyId, senderId);
   if (!sender) return { sender: null, templates: [] };
+  const templates = await marketingTemplates(
+    sender.wabaId,
+    decrypt(sender.accessTokenEncrypted, `${sender.id}:token`),
+  );
   return {
     sender: { id: sender.id, label: sender.label, displayPhone: sender.displayPhone },
-    templates: await marketingTemplates(
-      sender.wabaId,
-      decrypt(sender.accessTokenEncrypted, `${sender.id}:token`),
-    ),
+    templates: campaignId
+      ? templates.filter((template) =>
+          template.name.startsWith(`datamine_${campaignId.replace(/[^a-z0-9]/g, '')}_`),
+        )
+      : templates,
   };
 }
-export async function prepareTemplate(id: string, templateId: string) {
+export async function prepareTemplate(id: string, templateId: string, allowShared = false) {
   const [c] = await getDb().select().from(campaigns).where(eq(campaigns.id, id));
   if (!c) throw new HttpError(404, 'notFound');
   const sender = await campaignSender(c.agencyId, c.senderId);
@@ -248,7 +266,11 @@ export async function prepareTemplate(id: string, templateId: string) {
     sender.wabaId,
     decrypt(sender.accessTokenEncrypted, `${sender.id}:token`),
   );
-  const template = templates.find((t) => t.id === templateId);
+  const template = templates.find(
+    (t) =>
+      t.id === templateId &&
+      (allowShared || t.name.startsWith(`datamine_${id.replace(/[^a-z0-9]/g, '')}_`)),
+  );
   if (!template) throw new HttpError(422, 'templateUnavailable');
   await attachCampaignTemplate(id, template, sender.id);
 }
@@ -258,10 +280,11 @@ export async function attachCampaignTemplate(
   senderId: string,
 ) {
   const [c] = await getDb().select().from(campaigns).where(eq(campaigns.id, id));
-  if (!c || !['ready', 'matching', 'error'].includes(c.status))
+  if (!c || c.catalogOnly || !['ready', 'matching', 'error'].includes(c.status))
     throw new HttpError(409, 'campaignLocked');
   if (!(await campaignSender(c.agencyId, senderId)))
     throw new HttpError(409, 'campaignSenderMissing');
+  await checkTemplateSeller(c, template);
   if (!(template.language === c.locale || template.language.startsWith(`${c.locale}_`)))
     throw new HttpError(422, 'templateLanguage');
   const [updated] = await getDb()
@@ -289,6 +312,7 @@ export async function matchCampaign(id: string) {
     .where(
       and(
         eq(campaigns.id, id),
+        eq(campaigns.catalogOnly, false),
         inArray(campaigns.status, ['matching', 'error']),
         or(isNull(campaigns.runId), lt(campaigns.startedAt, new Date(Date.now() - 90000))),
       ),
@@ -296,6 +320,7 @@ export async function matchCampaign(id: string) {
     .returning();
   if (!c) return;
   try {
+    if (!(await isProductActive(c.productId))) throw new HttpError(409, 'productArchived');
     const people = await audience(c);
     if (people.length > 100) throw new HttpError(422, 'audienceLimit');
     const sourceHash = matchHash(c, people);
@@ -361,7 +386,7 @@ export async function matchCampaign(id: string) {
         status: 'error',
         error: code,
         dueAt:
-          code === 'audienceLimit'
+          code === 'audienceLimit' || code === 'productArchived'
             ? null
             : new Date(Date.now() + Math.min(900000, 15000 * 2 ** Math.min(c.attempts, 6))),
       })
@@ -376,12 +401,15 @@ export async function matchCampaign(id: string) {
 export async function launchCampaign(id: string, mode: 'template' | 'reply' = 'template') {
   const db = getDb(),
     [c] = await db.select().from(campaigns).where(eq(campaigns.id, id));
-  if (!c || c.status !== 'ready' || !c.analysis) throw new HttpError(409, 'campaignNotReady');
+  if (!c || c.catalogOnly || c.status !== 'ready' || !c.analysis)
+    throw new HttpError(409, 'campaignNotReady');
+  if (!(await isProductActive(c.productId))) throw new HttpError(409, 'productArchived');
   const sender = await campaignSender(c.agencyId, c.senderId);
   if (!sender || (mode === 'template' && sender.id !== c.senderId))
     throw new HttpError(409, 'campaignSenderMissing');
   if (mode === 'template') {
     if (!c.template) throw new HttpError(409, 'campaignNotReady');
+    await checkTemplateSeller(c, c.template);
     const currentTemplate = (
       await approvedTemplates(
         sender.wabaId,
@@ -488,14 +516,13 @@ export async function deliverRecipient(id: string) {
       .select()
       .from(sharedProfiles)
       .where(eq(sharedProfiles.id, r.profileId));
-    const [initialSender] = initial.senderId
-      ? await db.select().from(connections).where(eq(connections.id, initial.senderId))
-      : [];
+    const initialSender = await centralConnection();
     if (
       !person ||
       (!initial.template && initial.deliveryMode !== 'reply') ||
       !initialSender ||
-      initialSender.agencyId !== initial.agencyId ||
+      initialSender.id !== initial.senderId ||
+      !(await isProductActive(initial.productId)) ||
       initial.status !== 'sending'
     ) {
       await db
@@ -505,6 +532,7 @@ export async function deliverRecipient(id: string) {
       return;
     }
     if (initial.deliveryMode === 'template') {
+      await checkTemplateSeller(initial, initial.template!);
       const approved = (
         await approvedTemplates(
           initialSender.wabaId,
@@ -540,15 +568,14 @@ export async function deliverRecipient(id: string) {
         .from(campaigns)
         .where(eq(campaigns.id, r.campaignId))
         .for('update');
-      const [sender] = c.senderId
-        ? await tx.select().from(connections).where(eq(connections.id, c.senderId))
-        : [];
+      const sender = await centralConnection(tx, true);
       if (
         consent?.status !== 'accepted' ||
         c.status !== 'sending' ||
         (!c.template && c.deliveryMode !== 'reply') ||
         !sender ||
-        sender.agencyId !== c.agencyId ||
+        sender.id !== c.senderId ||
+        !(await isProductActive(c.productId, tx)) ||
         !p ||
         p.status !== 'active' ||
         p.offerHold ||
@@ -579,6 +606,10 @@ export async function deliverRecipient(id: string) {
           .where(eq(campaignRecipients.id, id));
         return;
       }
+      const [business] = await tx
+        .select({ name: agencies.name })
+        .from(agencies)
+        .where(eq(agencies.id, c.agencyId));
       if (
         c.deliveryMode === 'reply' &&
         (!conversation || !replyWindowOpen(conversation.lastInboundAt))
@@ -603,7 +634,10 @@ export async function deliverRecipient(id: string) {
           direction: 'outbound',
           contactPhone: p.phone,
           type: c.deliveryMode === 'reply' ? 'text' : 'template',
-          body: c.deliveryMode === 'reply' ? campaignReplyBody(c) : c.template!.body,
+          body:
+            c.deliveryMode === 'reply'
+              ? campaignReplyBody({ ...c, businessName: business.name })
+              : c.template!.body,
           deliveryStatus: 'submitting',
           providerTimestamp: new Date(),
         })
@@ -662,6 +696,7 @@ export async function processCampaigns(deliveryLimit = 5) {
       .where(
         and(
           inArray(campaigns.status, ['matching', 'error']),
+          eq(campaigns.catalogOnly, false),
           lt(campaigns.dueAt, new Date()),
           or(isNull(campaigns.runId), lt(campaigns.startedAt, new Date(Date.now() - 90000))),
         ),

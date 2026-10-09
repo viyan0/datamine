@@ -13,7 +13,8 @@ A multilingual business demo built with Next.js, TypeScript, PostgreSQL, Drizzle
 - Incoming-message inspection for authorized staff, including explicit labels for unsupported media.
 - An inbox at `/en/app/inbox` with business selection, customer search, status filters, the latest 100 messages, and automatic refresh.
 - One customer/inquiry record per phone number per connected inbox: name, category, product/service/topic, New / In progress / Closed, and a private note. Incoming messages create records automatically, including backfilled Phase 1 messages.
-- Text replies from the correct business number, with accepted/sent/delivered/read/failed/uncertain states. Viewers cannot reply or edit records.
+- One central Datamine WhatsApp number for customer consent, messages and offers, with accepted/sent/delivered/read/failed/uncertain states. The administrator selects it on **WhatsApp**. Businesses do not need their own API connection to publish offers. Viewers cannot reply or edit records.
+- A simple **Offers** catalog for each business: title, description, price/currency, language and expiry. Saving an active offer makes it available for automatic recommendations. Edit, archive and restore are supported; categories still come from AI. **Create campaign** copies the saved details into a separate manual bulk campaign.
 - An **interactive sample inbox** at `/en/demo/inbox`, `/ar/demo/inbox`, and `/ckb/demo/inbox`. Replies are simulated and edits reset on leaving the inbox; sample records never reach Meta or the database.
 - Automatic analysis and campaign processing use Vercel Queues when deployed on Vercel, or a companion process locally/on Render. An optional pg-boss worker handles connection health.
 
@@ -23,7 +24,7 @@ Manual bulk campaigns and automatic recommendations are separate flows. Assignme
 
 The first incoming WhatsApp message queues one consent notice. A single explicit YES (also Arabic/Sorani equivalents) covers message collection, AI analysis and promotional enrollment. Silence stays pending: messages are held without AI analysis or promotional matching. NO deletes the held chat; STOP withdraws later. A minimal phone/choice record prevents further collection after withdrawal. Replayed webhooks cannot send duplicate notices or silently reverse a choice.
 
-After YES, Haiku analyses the held messages, creates the shared customer profile and updates its interests automatically from its dynamic categories and subject. Existing unsent offers refresh their audience when those interests change. Consent applies once across connected businesses; no separate enrollment form is required. Business accounts can view their own customer contacts and interests extracted from their own chats. Other businesses cannot browse those contacts, conversations, or notes. The central administrator can view all businesses. The recommendation service uses consented interests to find suitable published offers across businesses.
+After YES on Datamine's central number, Haiku analyses the held messages, creates the shared customer profile and updates its interests automatically from its dynamic categories and subject. Existing unsent campaigns refresh their audience when those interests change. Consent is given once; no separate enrollment form is required. Only the selected central number collects new inbound messages or handles consent. Business accounts retain access to their own CRM records. Central conversations stay in the central workspace; other businesses cannot browse them or their private notes. The central administrator can view all businesses. The recommendation service uses consented interests to find suitable available offers across businesses.
 
 Inbox details show consent status. The existing verified customer portal remains an optional preferences route. Its opt-out removes the profile, chats and old access links. Neither the AI nor staff can infer an opt-in. Global withdrawals remove saved data and prevent future collection. Topic-specific stops only suppress that topic. Ambiguous sends are not blindly retried.
 
@@ -41,24 +42,24 @@ Set OPENROUTER_API_KEY to enable live analysis. Without it, the interface shows 
 
 Business owners/admins open **Campaigns** to create and send their own bulk offers. Haiku chooses the offer categories and matches only that business's consented customers, using interests and topics from its own chats. Active profiles, accepted consent, language, and topic preferences gate eligibility. This demo supports up to 100 eligible customers per campaign. Owners/admins can review their own customer contacts and match reasons; the central administrator can manage every campaign.
 
-Each campaign uses its business's connected WhatsApp sender. **Create template with AI** drafts plain text from the offer, which staff can edit and submit to Meta inside Datamine. The selector shows approved, pending, and rejected templates. It supports static body/footer text from the first 100 templates returned by Meta, without variables, buttons, or media. Selecting a template rematches the exact message. Template delivery requires current Meta approval.
+Every campaign uses the central Datamine WhatsApp sender and identifies the selling business. **Create template with AI** drafts plain text from the offer, which staff can edit and submit to Meta inside Datamine. Business users see templates for their campaign; the central administrator can see all. The selector shows approved, pending, and rejected templates. It supports static body/footer text from the first 100 templates returned by Meta, without variables, buttons, or media. Selecting a template rematches the exact message. Template delivery requires current Meta approval and the seller's name in the template.
 
 For matched customers with an open 24-hour chat window on that same sender, **Send now on WhatsApp** sends the preview as a real text reply. Closed windows are skipped. A pending template is not treated as approved, and no messaging window is bypassed. Manual bulk sends still require the business to click Send; the one-offer limit below applies only to automatic recommendations.
 
-Consent, topic preferences, profile revisions, sender ownership, and the reply window are checked again before delivery. Durable claims prevent duplicate submissions. STOP and deletion are serialized with actual submission; queued messages are cancelled, while a message already submitted cannot be recalled. Uncertain provider outcomes are never automatically resent.
+Consent, topic preferences, profile revisions, central sender identity, catalog availability and the reply window are checked again before delivery. Durable claims prevent duplicate submissions. STOP and deletion are serialized with actual submission; queued messages are cancelled, while a message already submitted cannot be recalled. Uncertain provider outcomes are never automatically resent. Catalog edits update its automatic offer; existing manual campaigns retain their saved details and price. Archiving an offer disables its automatic publication and blocks queued deliveries linked to it.
 
 ## Automatic recommendations
 
-A business explicitly enables **Recommend across Datamine** for an offer and sets **Available until**. Existing offers stay unpublished until enabled. Availability must be in the future and no more than 90 days away; offers can be unpublished at any time.
+Saving an active entry in **Offers** publishes it automatically until **Available until**. The catalog is separate from manual campaigns so saving does not send a bulk message. Existing manually created campaigns can still opt into **Recommend across Datamine**. Availability must be in the future and no more than 90 days away. Expired or archived offers are excluded. A fresh eligible customer message triggers matching; saving alone does not broadcast to existing chats.
 
-After at least two genuine inbound requests about the same topic, AI compares relevant, available offers from other participating businesses. It selects at most one clear match using the stated needs, budget, location, and offer details. It sends nothing if the supplied offers do not fit. "Best" means the best suitable candidate supplied to the model, not a claim about the whole market.
+After at least two genuine inbound requests about the same topic, AI compares relevant, available offers from all participating businesses. It selects at most one clear match using the stated needs, budget, location, and offer details. It sends nothing if the supplied offers do not fit. "Best" means the best suitable candidate supplied to the model, not a claim about the whole market.
 
 One automatic offer is sent, then that topic waits. Only an explicit **MORE** or equivalent request can send one further unseen offer. Another ordinary product question does not request more. Categories and topics come from AI rather than a fixed list.
 
 - **STOP OFFER** stops the latest offer's topic. Customers can also name a topic to stop. Other topics remain available, and MORE does not undo a topic stop.
 - **STOP**, **STOP ALL**, or **DELETE MY DATA** withdraws from the whole service and removes saved chats, customer profiles, recommendation records, and queued offers. A minimal consent-choice record prevents new collection. A later explicit YES can rejoin.
 
-Recommendations reply through the originating business number the customer contacted. They are sent only while that number's 24-hour customer-service window is open. An expired window waits for a fresh customer message. Supplier contact details appear in the offer; the supplier does not receive access to the customer's CRM record. This flow does not bypass Meta template approval or messaging limits.
+Recommendations and consent replies use only the selected, verified central Datamine number. They are sent only while that number's 24-hour customer-service window is open; a chat with a different number cannot open it. An expired window waits for a fresh customer message. Each offer names the seller and customers reply in the central chat. Suppliers do not need WhatsApp API accounts and do not receive access to the central chat. This flow does not bypass Meta template approval or messaging limits.
 
 The public demo uses temporary fixtures and simulated delivery. Automated integration tests mock Meta and OpenRouter. The optional live-AI smoke below uses real Haiku with synthetic customer requests; Meta delivery remains mocked.
 
@@ -89,7 +90,7 @@ node --env-file=.env.local --import tsx scripts/bootstrap.ts
 npm run dev
 ```
 
-Migrations include `0009_smart_offer_flow.sql`, which adds topic preferences, explicit network availability, and durable recommendation jobs. Existing offers default to unpublished.
+Migrations through `0011_catalog_offer_publication.sql` add the offer catalog and its automatic publication. The internal `products` table stores catalog offers; `catalog_only` campaign rows supply the existing AI recommendation engine and are excluded from manual campaign management. Existing manually created campaigns retain their publication choices.
 
 The bootstrap creates one Datamine agency and one central owner **only when no users exist**. It never resets an existing account's password. Change the initial password in Settings and remove the bootstrap password from the deployment environment afterward.
 

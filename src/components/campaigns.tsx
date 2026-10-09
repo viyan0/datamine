@@ -1,9 +1,9 @@
 'use client';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Megaphone, Plus, Send, Sparkles, Users, MessageCircle } from 'lucide-react';
 import { Button } from './ui/button';
-import { Dialog } from './dialog';
+import { NetworkFields, OfferCreateDialog, publicationInput } from './offer-create-dialog';
 import type { WorkspaceData } from '@/lib/workspace';
 import type { CampaignView } from '@/lib/campaign-types';
 import type { ManagedTemplate } from '@/lib/template-types';
@@ -21,56 +21,6 @@ async function api(path: string, body?: unknown) {
   const data = await r.json();
   if (!r.ok) throw new Error(data.error);
   return data;
-}
-function offerDate(value: Date) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
-}
-function publicationInput(form: FormData) {
-  const enabled = form.get('networkEnabled') === 'on';
-  const date = String(form.get('networkExpiresAt') || '');
-  return {
-    networkEnabled: enabled,
-    networkExpiresAt: enabled && date ? new Date(`${date}T23:59:59`).toISOString() : null,
-  };
-}
-function NetworkFields({ campaign, disabled }: { campaign?: CampaignView; disabled: boolean }) {
-  const t = useTranslations('offers');
-  const [enabled, setEnabled] = useState(campaign?.networkEnabled || false);
-  const [openedAt] = useState(() => Date.now());
-  return (
-    <>
-      <div className="consent-box">
-        <label>
-          <input
-            type="checkbox"
-            name="networkEnabled"
-            checked={enabled}
-            disabled={disabled}
-            onChange={(event) => setEnabled(event.target.checked)}
-          />
-          <span>{t('networkPublish')}</span>
-        </label>
-      </div>
-      {enabled && (
-        <label>
-          {t('networkUntil')}
-          <input
-            type="date"
-            name="networkExpiresAt"
-            required
-            disabled={disabled}
-            min={offerDate(new Date(openedAt))}
-            max={offerDate(new Date(openedAt + 89 * 86400000))}
-            defaultValue={
-              campaign?.networkExpiresAt
-                ? offerDate(new Date(campaign.networkExpiresAt))
-                : offerDate(new Date(openedAt + 7 * 86400000))
-            }
-          />
-        </label>
-      )}
-    </>
-  );
 }
 export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }) {
   const t = useTranslations('offers'),
@@ -199,51 +149,6 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
       setBusy(false);
     }
   }
-  async function create(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    const form = new FormData(e.currentTarget);
-    const input = {
-      agencyId: String(form.get('agencyId') || ''),
-      title: String(form.get('title') || ''),
-      offerText: String(form.get('offerText') || ''),
-      locale: String(form.get('locale') || ''),
-      ...publicationInput(form),
-    };
-    try {
-      if (demo) {
-        const id = crypto.randomUUID();
-        setItems((all) => [
-          {
-            id,
-            agencyId: String(input.agencyId),
-            agencyName: data.agencies.find((a) => a.id === input.agencyId)!.name,
-            title: String(input.title),
-            offerText: String(input.offerText),
-            locale: String(input.locale),
-            status: 'demoDraft',
-            createdAt: new Date().toISOString(),
-            error: null,
-            analysis: null,
-            template: null,
-            recipients: [],
-          },
-          ...all,
-        ]);
-        setSelected(id);
-      } else {
-        const result = await api('/api/campaigns', input);
-        setSelected(result.id);
-        setItems((await api('/api/campaigns')).campaigns);
-      }
-      setCreating(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'serverError');
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
     <>
       {demo && <p className="form-hint">{t('demoHint')}</p>}
@@ -308,6 +213,17 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
               <p className="campaign-offer" dir="auto">
                 {current.offerText}
               </p>
+              {current.networkEnabled &&
+                current.networkExpiresAt &&
+                current.status !== 'cancelled' && (
+                  <p className="notice" role="status">
+                    {t('networkAvailable', {
+                      date: new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(
+                        new Date(current.networkExpiresAt),
+                      ),
+                    })}
+                  </p>
+                )}
               {current.status === 'demoDraft' && <p className="notice">{t('demoDraftHint')}</p>}
               {canManage && !demo && current.status !== 'cancelled' && (
                 <details className="offer-template-tools">
@@ -388,7 +304,9 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
                     <div className="campaign-message">
                       <strong>{t('messagePreview')}</strong>
                       <p dir="auto">
-                        {showReply ? campaignReplyBody(current) : current.template?.body}
+                        {showReply
+                          ? campaignReplyBody({ ...current, businessName: current.agencyName })
+                          : current.template?.body}
                       </p>
                     </div>
                   )}
@@ -479,46 +397,16 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
         )}
       </div>
       {creating && (
-        <Dialog title={t('newOffer')} close={() => setCreating(false)}>
-          <form className="modal-body" onSubmit={create}>
-            <p className="form-hint">{t('submitHint')}</p>
-            <label>
-              {t('business')}
-              <select name="agencyId">
-                {data.agencies
-                  .filter((a) => admin || ['owner', 'admin'].includes(a.role))
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              {t('title')}
-              <input name="title" required minLength={2} maxLength={100} />
-            </label>
-            <label>
-              {t('offerText')}
-              <textarea name="offerText" required minLength={10} maxLength={3000} rows={5} />
-            </label>
-            <label>
-              {t('language')}
-              <select name="locale" defaultValue={locale}>
-                <option value="en">English</option>
-                <option value="ar">العربية</option>
-                <option value="ckb">کوردی</option>
-              </select>
-            </label>
-            {!demo && <NetworkFields disabled={busy} />}
-            {error && (
-              <p role="alert" className="form-error">
-                {errors.has(error) ? errors(error) : errors('serverError')}
-              </p>
-            )}
-            <Button disabled={busy}>{t('submit')}</Button>
-          </form>
-        </Dialog>
+        <OfferCreateDialog
+          data={data}
+          demo={demo}
+          close={() => setCreating(false)}
+          onCreated={(campaign) => {
+            setItems((all) => [campaign, ...all]);
+            setSelected(campaign.id);
+            setCreating(false);
+          }}
+        />
       )}
     </>
   );

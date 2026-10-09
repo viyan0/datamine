@@ -71,6 +71,20 @@
       "when": 1791536739946,
       "tag": "0009_smart_offer_flow",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791541715392,
+      "tag": "0010_business_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791542104879,
+      "tag": "0011_catalog_offer_publication",
+      "breakpoints": true
     }
   ]
 }

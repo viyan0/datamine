@@ -5,7 +5,6 @@ import {
   agencies,
   campaigns,
   campaignRecipients,
-  connections,
   conversations,
   customerConsents,
   enrollmentLinks,
@@ -18,6 +17,7 @@ import { decrypt } from './security';
 import { sendMetaText } from './meta';
 import { replyWindowOpen } from './inbox-types';
 import { purgeRecommendations } from './recommendations';
+import { centralConnection } from './central-whatsapp';
 
 type Transaction = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0];
 export const whatsappConsentVersion = '2026-10-09-whatsapp-v3';
@@ -76,6 +76,7 @@ export async function refreshOfferAudiences(tx: Transaction, locales: string[]) 
     .where(
       and(
         inArray(campaigns.status, ['ready', 'matching', 'error']),
+        eq(campaigns.catalogOnly, false),
         inArray(campaigns.locale, [...new Set(locales)]),
       ),
     );
@@ -131,6 +132,8 @@ export async function handleCustomerConsent(
     timestamp: Date;
   },
 ) {
+  const central = await centralConnection(tx);
+  if (!central || central.id !== input.connectionId) return { store: false, accepted: false };
   const [business] = await tx
     .select({ locale: agencies.locale })
     .from(agencies)
@@ -309,11 +312,8 @@ export async function processConsentReplies(limit = 2) {
       if (!current) return;
       let result: { status: string } = { status: 'failed' };
       if (replyWindowOpen(current.lastInboundAt)) {
-        const [connection] = await tx
-          .select()
-          .from(connections)
-          .where(eq(connections.id, current.replyConnectionId));
-        if (connection)
+        const connection = await centralConnection(tx, true);
+        if (connection && connection.id === current.replyConnectionId)
           result = await sendMetaText({
             phoneNumberId: connection.phoneNumberId,
             accessToken: decrypt(connection.accessTokenEncrypted, `${connection.id}:token`),

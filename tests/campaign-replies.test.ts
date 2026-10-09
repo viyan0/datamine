@@ -12,6 +12,7 @@ import { campaignReplyBody } from '../src/lib/campaign-delivery';
 import type { SavedAnalysis } from '../src/lib/analysis-types';
 import { clearCustomerData } from '../src/lib/consent';
 import { updateConversationDetails } from '../src/lib/inbox';
+import { createProduct, updateProduct } from '../src/lib/products';
 import {
   deliverRecipient,
   launchCampaign,
@@ -44,7 +45,7 @@ test('real campaign replies respect sender windows, consent, and durable send cl
     id: 'pending',
     name: 'test_offer',
     language: 'en',
-    body: 'Phone offer. Reply STOP to stop offers.',
+    body: 'Test business: Phone offer. Reply STOP to stop offers.',
   };
   globalThis.fetch = async (url, init) => {
     if (String(url) === 'https://openrouter.ai/api/v1/chat/completions') {
@@ -139,6 +140,7 @@ test('real campaign replies respect sender windows, consent, and durable send cl
         accessTokenEncrypted: encrypt('test-only', `${id}:token`),
         appSecretEncrypted: 'unused',
         campaignSender: !i,
+        verifiedAt: new Date(),
       })),
     );
     await db.insert(schema.connections).values({
@@ -253,6 +255,7 @@ test('real campaign replies respect sender windows, consent, and durable send cl
         assert.equal(
           (sends[0].text as { body: string }).body,
           campaignReplyBody({
+            businessName: 'Test business',
             offerText: 'Phone offer for interested customers.',
             locale: 'en',
             template: null,
@@ -310,7 +313,10 @@ test('real campaign replies respect sender windows, consent, and durable send cl
         await deliverRecipient((await recipient(id)).id);
         assert.equal(sends.length, 2);
         assert.equal(sends[1].type, 'text');
-        assert.equal((sends[1].text as { body: string }).body, pending.body);
+        assert.equal(
+          (sends[1].text as { body: string }).body,
+          `Datamine · Test business\n\n${pending.body}`,
+        );
       },
     );
     await t.test('a lost provider response is not automatically sent again', async () => {
@@ -324,11 +330,11 @@ test('real campaign replies respect sender windows, consent, and durable send cl
       assert.equal(sends.length, 3);
     });
     await t.test(
-      'businesses see only their campaigns and send through their own unflagged sender',
+      'business campaigns stay private and use only the central sender and its reply window',
       async () => {
         ambiguous = false;
-        assert.equal((await campaignSender('different-business'))?.id, 'foreign-sender');
-        assert.equal(await campaignSender('different-business', 'sender'), undefined);
+        assert.equal((await campaignSender('different-business'))?.id, 'sender');
+        assert.equal(await campaignSender('different-business', 'foreign-sender'), undefined);
         const id = randomUUID();
         await db.insert(schema.campaigns).values({
           id,
@@ -351,9 +357,24 @@ test('real campaign replies respect sender windows, consent, and durable send cl
         assert.deepEqual(own[0].recipients?.[0].interests, ['Phones']);
         assert.ok((await listCampaigns(['business'], false)).every((c) => c.id !== id));
         await assert.rejects(
-          () => attachCampaignTemplate(id, pending, 'sender'),
+          () => attachCampaignTemplate(id, pending, 'foreign-sender'),
           /campaignSenderMissing/,
         );
+        await assert.rejects(
+          () => attachCampaignTemplate(id, pending, 'sender'),
+          /templateSellerMissing/,
+        );
+        await assert.rejects(() => launchCampaign(id, 'reply'), /campaignReplyWindowClosed/);
+        await db.insert(schema.conversations).values({
+          id: 'central-missing',
+          agencyId: 'business',
+          connectionId: 'sender',
+          contactPhone: 'missing',
+          name: 'Central customer',
+          analysis: savedAnalysis,
+          lastInboundAt: recent(),
+          lastMessageAt: recent(),
+        });
         await launchCampaign(id, 'reply');
         const [r] = await db
           .select()
@@ -362,6 +383,8 @@ test('real campaign replies respect sender windows, consent, and durable send cl
         await deliverRecipient(r.id);
         assert.equal(sends.length, 4);
         assert.equal(sends[3].to, 'missing');
+        assert.match((sends[3].text as { body: string }).body, /^Datamine · Different business/);
+        await db.delete(schema.conversations).where(eq(schema.conversations.id, 'central-missing'));
       },
     );
     await t.test(
@@ -422,6 +445,62 @@ test('real campaign replies respect sender windows, consent, and durable send cl
       assert.equal(saved.networkEnabled, false);
       assert.equal(saved.networkExpiresAt, null);
     });
+    await t.test(
+      'archiving a catalog offer blocks linked manual launch, publication and queued delivery',
+      async () => {
+        await db
+          .update(schema.customerConsents)
+          .set({ status: 'accepted' })
+          .where(eq(schema.customerConsents.phone, 'open'));
+        const manager = { id: 'owner', platformRole: 'admin' };
+        const product = await createProduct(manager, {
+          agencyId: 'business',
+          name: 'Phone offer',
+          description: 'Available phone',
+          price: '100',
+          currency: 'USD',
+        });
+        const id = await offer();
+        await db
+          .update(schema.campaigns)
+          .set({ productId: product.id })
+          .where(eq(schema.campaigns.id, id));
+        await launchCampaign(id, 'reply');
+        const queued = await recipient(id);
+        await updateProduct(manager, product.id, { active: false });
+        await deliverRecipient(queued.id);
+        assert.equal((await recipient(id)).status, 'cancelled');
+        assert.equal(sends.length, 4);
+        await assert.rejects(
+          () => publishCampaign(id, true, new Date(Date.now() + 86400000).toISOString()),
+          /productArchived/,
+        );
+        const next = await offer();
+        await db
+          .update(schema.campaigns)
+          .set({ productId: product.id })
+          .where(eq(schema.campaigns.id, next));
+        await assert.rejects(() => launchCampaign(next, 'reply'), /productArchived/);
+        assert.equal(
+          (await db.select().from(schema.campaigns).where(eq(schema.campaigns.id, id)))[0]
+            .networkEnabled,
+          false,
+        );
+        await updateProduct(manager, product.id, { active: true });
+        await launchCampaign(next, 'reply');
+        await db
+          .update(schema.products)
+          .set({ expiresAt: new Date(Date.now() - 1) })
+          .where(eq(schema.products.id, product.id));
+        await deliverRecipient((await recipient(next)).id);
+        assert.equal(
+          (await recipient(next)).status,
+          'cancelled',
+          'an expired offer cannot send after queueing',
+        );
+        assert.equal(sends.length, 4);
+      },
+    );
     await t.test(
       'manual topic corrections and analysis resets invalidate queued offers',
       async () => {

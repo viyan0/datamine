@@ -9,13 +9,13 @@ import { wakeAutomation } from '@/lib/automation';
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     checkOrigin(request);
-    await requireSession();
+    const session = await requireSession();
     const { id } = await params;
     const [campaign] = await getDb()
-      .select({ agencyId: campaigns.agencyId })
+      .select({ agencyId: campaigns.agencyId, catalogOnly: campaigns.catalogOnly })
       .from(campaigns)
       .where(eq(campaigns.id, id));
-    if (!campaign) throw new HttpError(404, 'notFound');
+    if (!campaign || campaign.catalogOnly) throw new HttpError(404, 'notFound');
     await requireAgency(campaign.agencyId, true);
     const input = z
       .discriminatedUnion('action', [
@@ -32,7 +32,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }),
       ])
       .parse(await bodyJson(request));
-    if (input.action === 'template') await prepareTemplate(id, input.templateId);
+    if (input.action === 'template')
+      await prepareTemplate(id, input.templateId, session.user.platformRole === 'admin');
     if (input.action === 'send') await launchCampaign(id, input.mode);
     if (input.action === 'cancel') await cancelCampaign(id);
     if (input.action === 'network') await publishCampaign(id, input.enabled, input.expiresAt);

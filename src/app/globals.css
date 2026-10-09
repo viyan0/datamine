@@ -1288,6 +1288,106 @@ html[dir='rtl'] .directional {
   color: #8d9c82;
   font-size: 11px;
 }
+.product-toolbar {
+  flex-wrap: wrap;
+}
+.product-filters,
+.product-count,
+.product-count label,
+.product-actions,
+.product-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.product-filters {
+  flex-wrap: wrap;
+}
+.product-filters select {
+  width: auto;
+  min-width: 170px;
+}
+.product-count {
+  justify-content: space-between;
+  margin-bottom: 20px;
+  color: var(--muted, #7b777e);
+  font-size: 12px;
+}
+.product-count label {
+  flex-direction: row;
+  font-weight: 400;
+}
+.product-count input {
+  width: 15px;
+  height: 15px;
+  min-height: 0;
+  accent-color: #db2461;
+}
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr));
+  gap: 20px;
+}
+.product-card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.product-card-heading {
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 18px;
+}
+.product-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  color: #c3265a;
+  background: #fbeaf0;
+}
+.product-card > small {
+  color: #817a80;
+  font-size: 11px;
+}
+.product-card h2 {
+  margin: 6px 0 8px;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+.product-description {
+  color: #817a80;
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 0 0 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.product-price {
+  margin-top: auto;
+  font-size: 21px;
+  letter-spacing: -0.5px;
+}
+.product-availability {
+  margin-top: 10px;
+  line-height: 1.6;
+}
+.product-actions {
+  width: 100%;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #eee9ec;
+}
+.product-actions .btn {
+  padding-inline: 12px;
+}
 .search-field {
   display: flex;
   flex-direction: row;

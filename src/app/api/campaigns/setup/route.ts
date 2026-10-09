@@ -7,15 +7,22 @@ import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { senderTemplates } from '@/lib/campaigns';
 export async function GET(request: Request) {
   try {
-    await requireSession();
+    const session = await requireSession();
     const campaignId = new URL(request.url).searchParams.get('campaignId');
     if (campaignId) {
       const [campaign] = await getDb().select().from(campaigns).where(eq(campaigns.id, campaignId));
-      if (!campaign) throw new HttpError(404, 'notFound');
+      if (!campaign || campaign.catalogOnly) throw new HttpError(404, 'notFound');
       await requireAgency(campaign.agencyId, true);
-      return Response.json(await senderTemplates(campaign.agencyId, campaign.senderId), {
-        headers: { 'Cache-Control': 'no-store' },
-      });
+      return Response.json(
+        await senderTemplates(
+          campaign.agencyId,
+          campaign.senderId,
+          session.user.platformRole === 'admin' ? undefined : campaign.id,
+        ),
+        {
+          headers: { 'Cache-Control': 'no-store' },
+        },
+      );
     }
     await requirePlatformAdmin();
     return Response.json(await senderTemplates(), { headers: { 'Cache-Control': 'no-store' } });
@@ -30,6 +37,8 @@ export async function POST(request: Request) {
     const { id } = z.object({ id: z.string().min(1) }).parse(await bodyJson(request));
     const [selected] = await getDb().select().from(connections).where(eq(connections.id, id));
     if (!selected) throw new HttpError(404, 'notFound');
+    if (!selected.verifiedAt || !['configured', 'receiving'].includes(selected.status))
+      throw new HttpError(409, 'campaignSenderMissing');
     await requireAgency(selected.agencyId, true);
     await getDb().transaction(async (tx) => {
       await tx

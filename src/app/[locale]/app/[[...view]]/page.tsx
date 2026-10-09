@@ -28,5 +28,7 @@ export default async function Workspace({
   const session = await getAuth().api.getSession({ headers: await headers() });
   if (!session) redirect(`/${locale}`);
   if (section === 'customers' && session.user.platformRole !== 'admin') notFound();
-  return <Dashboard data={await loadWorkspace(session.user)} section={section} />;
+  return (
+    <Dashboard data={await loadWorkspace(session.user, section === 'overview')} section={section} />
+  );
 }

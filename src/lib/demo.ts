@@ -1,4 +1,20 @@
 import type { WorkspaceData } from './workspace';
+import { activityDays, dashboardDate, type DailyActivity } from './dashboard-analytics';
+import { demoConversations, demoMessages } from './demo-inbox';
+
+const sampleMessages = Object.values(demoMessages).flat();
+const sampleDays = new Map<string, DailyActivity>();
+for (const message of sampleMessages) {
+  const date = dashboardDate(new Date(message.timestamp));
+  const day = sampleDays.get(date) ?? { date, received: 0, sent: 0 };
+  if (message.direction === 'inbound') day.received++;
+  else if (['sent', 'delivered', 'read'].includes(message.deliveryStatus)) day.sent++;
+  sampleDays.set(date, day);
+}
+const latestSample = new Date(
+  Math.max(...sampleMessages.map((message) => new Date(message.timestamp).getTime())),
+);
+
 export const demoData: WorkspaceData = {
   user: { name: 'Demo explorer', email: 'explorer@example.com', platformAdmin: true },
   agencies: [
@@ -109,5 +125,13 @@ export const demoData: WorkspaceData = {
       createdAt: '2026-10-06T09:00:00Z',
     },
   ],
-  messageCount: 12,
+  messageCount: sampleMessages.filter((message) => message.direction === 'inbound').length,
+  analytics: {
+    daily: activityDays([...sampleDays.values()], latestSample),
+    conversations: {
+      new: demoConversations.filter((c) => c.inquiryStatus === 'new').length,
+      inProgress: demoConversations.filter((c) => c.inquiryStatus === 'inProgress').length,
+      closed: demoConversations.filter((c) => c.inquiryStatus === 'closed').length,
+    },
+  },
 };

@@ -61,10 +61,7 @@ export function AgencyInbox({ data, demo }: { data: WorkspaceData; demo: boolean
             ))}
           </select>
         </label>
-        <span className="inbox-context">
-          <MessageCircle size={16} />
-          {t(demo ? 'sampleHint' : 'privateHint')}
-        </span>
+        {demo && <span className="inbox-context">{t('sampleHint')}</span>}
       </div>
       {agency ? (
         <InboxThreads
@@ -400,7 +397,7 @@ function ConversationView({
           lastMessageAt={c.lastMessageAt}
         />
         <div className="conversation-messages" aria-label={t('messageHistory')}>
-          <p className="history-caption">{t(demo ? 'sampleConversation' : 'recentMessages')}</p>
+          {demo && <p className="history-caption">{t('sampleConversation')}</p>}
           {loading && <p className="history-caption">{t('loading')}</p>}
           {items.map((m) => (
             <div

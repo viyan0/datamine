@@ -117,7 +117,7 @@ export function CustomerDirectory({ demo }: { demo: boolean }) {
                 </td>
                 <td dir="ltr">{p.phone}</td>
                 <td>
-                  <span dir="auto">{p.interests.join(' · ') || '—'}</span>
+                  <span dir="auto">{p.interests.join(' · ') || t('noInterests')}</span>
                   <small className="directory-language" dir="auto">
                     {p.destination}
                   </small>

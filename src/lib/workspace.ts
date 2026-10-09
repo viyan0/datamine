@@ -1,6 +1,15 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { agencies, memberships, connections, user, messages, auditEvents } from '@/db/schema';
+import {
+  agencies,
+  memberships,
+  connections,
+  conversations,
+  user,
+  messages,
+  auditEvents,
+} from '@/db/schema';
+import { activityDays, type DashboardAnalytics } from './dashboard-analytics';
 
 export type WorkspaceData = {
   user: { name: string; email: string; platformAdmin: boolean };
@@ -34,13 +43,17 @@ export type WorkspaceData = {
   }[];
   activity: { id: string; action: string; agencyName: string; createdAt: string }[];
   messageCount: number;
+  analytics?: DashboardAnalytics;
 };
-export async function loadWorkspace(current: {
-  id: string;
-  name: string;
-  email: string;
-  platformRole?: string;
-}): Promise<WorkspaceData> {
+export async function loadWorkspace(
+  current: {
+    id: string;
+    name: string;
+    email: string;
+    platformRole?: string;
+  },
+  includeAnalytics = false,
+): Promise<WorkspaceData> {
   const db = getDb();
   const agencyRows = await db
     .select({
@@ -63,8 +76,23 @@ export async function loadWorkspace(current: {
     platformAdmin: current.platformRole === 'admin',
   };
   if (!ids.length)
-    return { user: own, agencies: [], connections: [], members: [], activity: [], messageCount: 0 };
-  const [connectionRows, memberRows, activityRows, countRows] = await Promise.all([
+    return {
+      user: own,
+      agencies: [],
+      connections: [],
+      members: [],
+      activity: [],
+      messageCount: 0,
+      ...(includeAnalytics
+        ? {
+            analytics: {
+              daily: activityDays([]),
+              conversations: { new: 0, inProgress: 0, closed: 0 },
+            },
+          }
+        : {}),
+    };
+  const [connectionRows, memberRows, activityRows, countRows, analytics] = await Promise.all([
     db
       .select({
         id: connections.id,
@@ -108,6 +136,7 @@ export async function loadWorkspace(current: {
       .select({ count: sql<number>`count(*)::integer` })
       .from(messages)
       .where(and(inArray(messages.agencyId, ids), eq(messages.direction, 'inbound'))),
+    includeAnalytics ? loadDashboardAnalytics(ids) : undefined,
   ]);
   return {
     user: own,
@@ -119,7 +148,42 @@ export async function loadWorkspace(current: {
     members: memberRows,
     activity: activityRows.map((a) => ({ ...a, createdAt: a.createdAt.toISOString() })),
     messageCount: countRows[0]?.count ?? 0,
+    ...(analytics ? { analytics } : {}),
   };
+}
+
+async function loadDashboardAnalytics(agencyIds: string[]): Promise<DashboardAnalytics> {
+  const db = getDb(),
+    now = new Date();
+  const days = activityDays([], now);
+  const start = new Date(`${days[0].date}T00:00:00+03:00`);
+  const day = sql<string>`to_char(${messages.providerTimestamp} at time zone 'Asia/Baghdad', 'YYYY-MM-DD')`;
+  const [daily, counts] = await Promise.all([
+    db
+      .select({
+        date: day,
+        received: sql<number>`count(*) filter (where ${messages.direction} = 'inbound')::integer`,
+        sent: sql<number>`count(*) filter (where ${messages.direction} = 'outbound' and ${messages.deliveryStatus} in ('sent', 'delivered', 'read'))::integer`,
+      })
+      .from(messages)
+      .where(
+        and(
+          inArray(messages.agencyId, agencyIds),
+          gte(messages.providerTimestamp, start),
+          lte(messages.providerTimestamp, now),
+        ),
+      )
+      .groupBy(day),
+    db
+      .select({
+        new: sql<number>`count(*) filter (where ${conversations.inquiryStatus} = 'new')::integer`,
+        inProgress: sql<number>`count(*) filter (where ${conversations.inquiryStatus} = 'inProgress')::integer`,
+        closed: sql<number>`count(*) filter (where ${conversations.inquiryStatus} = 'closed')::integer`,
+      })
+      .from(conversations)
+      .where(inArray(conversations.agencyId, agencyIds)),
+  ]);
+  return { daily: activityDays(daily, now), conversations: counts[0] };
 }
 export async function listAgencyMessages(agencyId: string) {
   return getDb()

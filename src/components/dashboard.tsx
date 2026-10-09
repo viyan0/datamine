@@ -4,11 +4,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import {
-  ArrowDownLeft,
-  ArrowRight,
   ArrowUpRight,
   Building2,
-  Check,
   ChevronRight,
   Copy,
   Globe2,
@@ -40,6 +37,7 @@ import { CustomerDirectory } from './customer-directory';
 import { BusinessSettings } from './business-settings';
 import { Campaigns } from './campaigns';
 import { AgencyInbox } from './inbox';
+import { DashboardCharts } from './dashboard-charts';
 
 const languageNames: Record<string, string> = { en: 'English', ar: 'العربية', ckb: 'کوردی' };
 const nav = [
@@ -82,13 +80,6 @@ export function Dashboard({
   const root = `/${locale}/${demo ? 'demo' : 'app'}`;
   const manage = data.agencies.some((a) => ['owner', 'admin'].includes(a.role));
   const totalPeople = new Set(data.members.map((m) => m.email)).size;
-  const completed = [
-    data.agencies.length > 0,
-    totalPeople > 1,
-    data.connections.length > 0,
-    data.messageCount > 0,
-  ];
-  const done = completed.filter(Boolean).length;
   function open(kind: FormKind) {
     if (demo) setNotice(t('demoReadOnly'));
     else setForm(kind);
@@ -98,17 +89,6 @@ export function Dashboard({
       new Date(value),
     );
   }
-  const headerKeys: Record<string, [string, string]> = {
-    overview: ['welcome', 'welcomeSub'],
-    inbox: ['inboxTitle', 'inboxSub'],
-    customers: ['customersTitle', 'customersSub'],
-    campaigns: ['campaignsTitle', 'campaignsSub'],
-    agencies: ['agenciesTitle', 'agenciesSub'],
-    team: ['teamTitle', 'teamSub'],
-    connections: ['connectionTitle', 'connectionSub'],
-    settings: ['settingsTitle', 'settingsSub'],
-  };
-  const currentHeader = headerKeys[section];
   function agencyTable(items: WorkspaceData['agencies']) {
     return items.length ? (
       <div className="table-scroll">
@@ -183,7 +163,6 @@ export function Dashboard({
             <X size={18} />
           </button>
         </div>
-        <p className="nav-label">{t('workspace')}</p>
         <nav aria-label={t('workspace')}>
           {nav
             .filter((item) => item.key !== 'customers' || data.user.platformAdmin)
@@ -262,30 +241,34 @@ export function Dashboard({
           <div className="page-heading">
             <div>
               <h1>{t(section)}</h1>
-              <p>{t(currentHeader[1])}</p>
             </div>
-            {section === 'overview' || section === 'agencies'
-              ? data.user.platformAdmin && (
-                  <Button onClick={() => open('agency')}>
-                    <Plus size={17} />
-                    {t('newAgency')}
-                  </Button>
-                )
-              : section === 'team'
-                ? manage && (
-                    <Button onClick={() => open('invite')}>
-                      <Plus size={17} />
-                      {t('inviteMember')}
-                    </Button>
-                  )
-                : section === 'connections'
-                  ? manage && (
-                      <Button onClick={() => open('connection')}>
-                        <Plus size={17} />
-                        {t('connectNumber')}
-                      </Button>
-                    )
-                  : null}
+            {section === 'overview' ? (
+              <Link className="btn btn-primary" href={`${root}/inbox`}>
+                {t('explore')}
+                <ArrowUpRight size={16} />
+              </Link>
+            ) : section === 'agencies' ? (
+              data.user.platformAdmin && (
+                <Button onClick={() => open('agency')}>
+                  <Plus size={17} />
+                  {t('newAgency')}
+                </Button>
+              )
+            ) : section === 'team' ? (
+              manage && (
+                <Button onClick={() => open('invite')}>
+                  <Plus size={17} />
+                  {t('inviteMember')}
+                </Button>
+              )
+            ) : section === 'connections' ? (
+              manage && (
+                <Button onClick={() => open('connection')}>
+                  <Plus size={17} />
+                  {t('connectNumber')}
+                </Button>
+              )
+            ) : null}
           </div>
           {notice && (
             <div className="notice" role="status">
@@ -301,151 +284,18 @@ export function Dashboard({
           {section === 'inbox' && <AgencyInbox data={data} demo={demo} />}
           {section === 'overview' && (
             <>
-              <div className="stats-grid">
-                {[
-                  {
-                    label: 'agenciesMetric',
-                    hint: 'agenciesHint',
-                    value: data.agencies.length,
-                    icon: Building2,
-                    color: 'mint',
-                  },
-                  {
-                    label: 'membersMetric',
-                    hint: 'membersHint',
-                    value: totalPeople,
-                    icon: Users,
-                    color: 'lavender',
-                  },
-                  {
-                    label: 'connectionsMetric',
-                    hint: 'connectionsHint',
-                    value: data.connections.length,
-                    icon: MessageCircle,
-                    color: 'peach',
-                  },
-                  {
-                    label: 'messagesMetric',
-                    hint: 'messagesHint',
-                    value: data.messageCount,
-                    icon: ArrowDownLeft,
-                    color: 'blue',
-                  },
-                ].map(({ label, hint, value, icon: Icon, color }) => (
-                  <article className="stat-card" key={label}>
-                    <div>
-                      <span>{t(label)}</span>
-                      <span className={`stat-icon ${color}`}>
-                        <Icon size={18} />
-                      </span>
-                    </div>
-                    <strong>
-                      {new Intl.NumberFormat(locale, { minimumIntegerDigits: 2 }).format(value)}
-                    </strong>
-                    <small>{t(hint)}</small>
-                  </article>
-                ))}
-              </div>
-              <section className="setup-card">
-                <div className="setup-heading">
-                  <div>
-                    <span className="eyebrow">{t('getStarted')}</span>
-                    <h2>{t('setupTitle')}</h2>
-                    <p>{t('setupSub')}</p>
-                  </div>
-                  <div
-                    className="completion-ring"
-                    style={{ '--progress': `${done * 25}%` } as React.CSSProperties}
-                  >
-                    <span>{done}/4</span>
-                  </div>
-                </div>
-                <div className="setup-steps">
-                  {['One', 'Two', 'Three', 'Four'].map((n, i) => (
-                    <button
-                      key={n}
-                      className={`setup-step ${completed[i] ? 'complete' : ''}`}
-                      onClick={() =>
-                        i === 0
-                          ? open('agency')
-                          : i === 1
-                            ? open('invite')
-                            : router.push(`${root}/connections`)
-                      }
-                      disabled={
-                        !demo && ((i === 0 && !data.user.platformAdmin) || (i === 1 && !manage))
-                      }
-                    >
-                      <span className="step-marker">
-                        {completed[i] ? <Check size={15} /> : `0${i + 1}`}
-                      </span>
-                      <span>
-                        <strong>{t(`step${n}`)}</strong>
-                        <small>{t(`step${n}Sub`)}</small>
-                      </span>
-                      <ChevronRight size={15} className="step-arrow" />
-                    </button>
-                  ))}
-                </div>
-              </section>
-              <div className="overview-grid">
-                <section className="panel agency-panel">
-                  <div className="panel-heading">
-                    <div>
-                      <h2>{t('networkTitle')}</h2>
-                      <p>{t('networkSub')}</p>
-                    </div>
-                    <Link className="text-link" href={`${root}/agencies`}>
-                      {t('viewAll')}
-                      <ArrowUpRight size={14} />
-                    </Link>
-                  </div>
-                  {agencyTable(data.agencies.slice(0, 4))}
-                </section>
-                <section className="panel activity-panel">
-                  <div className="panel-heading">
-                    <div>
-                      <h2>{t('activityTitle')}</h2>
-                      <p>{t('activitySub')}</p>
-                    </div>
-                    <span className="activity-live" />
-                  </div>
-                  {data.activity.length ? (
-                    <div className="activity-list">
-                      {data.activity.map((a, i) => (
-                        <div className="activity-item" key={a.id}>
-                          <span className={`activity-icon avatar-${i % 4}`}>
-                            {a.action === 'connectionAdded' ? (
-                              <MessageCircle size={15} />
-                            ) : a.action === 'agencyCreated' ? (
-                              <Building2 size={15} />
-                            ) : (
-                              <Users size={15} />
-                            )}
-                          </span>
-                          <div>
-                            <strong>{t(t.has(a.action) ? a.action : 'unknownActivity')}</strong>
-                            <small>{a.agencyName}</small>
-                          </div>
-                          <time>{date(a.createdAt)}</time>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <Empty icon={Radio} title={t('noActivity')} subtitle={t('noActivitySub')} />
-                  )}
-                </section>
-              </div>
-              <section className="next-banner">
-                <div>
-                  <span className="eyebrow">{t('networkLabel')}</span>
-                  <h2>{t('nextTitle')}</h2>
-                  <p>{t('nextText')}</p>
-                  <Link href={`${root}/inbox`}>
-                    {t('explore')}
-                    <ArrowRight size={15} className="directional" />
+              {data.analytics && (
+                <DashboardCharts analytics={data.analytics} businessCount={data.agencies.length} />
+              )}
+              <section className="panel agency-panel overview-businesses">
+                <div className="panel-heading">
+                  <h2>{t('agencies')}</h2>
+                  <Link className="text-link" href={`${root}/agencies`}>
+                    {t('viewAll')}
+                    <ArrowUpRight size={14} />
                   </Link>
                 </div>
+                {agencyTable(data.agencies.slice(0, 4))}
               </section>
             </>
           )}
@@ -470,10 +320,6 @@ export function Dashboard({
                   ),
                 )}
               </section>
-              <div className="notice subtle">
-                <ShieldCheck size={20} />
-                <p>{t('securityText')}</p>
-              </div>
             </>
           )}
           {section === 'team' && (
@@ -571,10 +417,6 @@ export function Dashboard({
                   </Empty>
                 </section>
               )}
-              <div className="notice subtle">
-                <ShieldCheck size={20} />
-                <p>{t('connectionNote')}</p>
-              </div>
               <WebhookPanel demo={demo} admin={data.user.platformAdmin} />
               {!demo && data.agencies.length > 0 && <MessagePanel data={data} />}
             </>
@@ -604,19 +446,11 @@ export function Dashboard({
                 </span>
                 <h2>{t('securityTitle')}</h2>
                 <p>{t('securityText')}</p>
-                <hr />
-                <h3>{t('phaseScope')}</h3>
-                <p>{t('scopeText')}</p>
               </section>
               <BusinessSettings data={data} demo={demo} />
               <PasswordPanel demo={demo} />
             </div>
           )}
-          <footer className="workspace-footer">
-            <span>
-              Datamine <span>✦</span> {t('brandTag')}
-            </span>
-          </footer>
         </main>
       </div>
       {form && <WorkspaceForm kind={form} data={data} close={() => setForm(null)} />}

@@ -184,10 +184,7 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
   }
   return (
     <>
-      <div className="notice subtle">
-        <Sparkles size={20} />
-        <p>{t(demo ? 'demoHint' : 'automaticHint')}</p>
-      </div>
+      {demo && <p className="form-hint">{t('demoHint')}</p>}
       {configured === false && !demo && <p className="notice">{t('aiSetup')}</p>}
       <div className="toolbar">
         <span>{t('count', { count: items.length })}</span>

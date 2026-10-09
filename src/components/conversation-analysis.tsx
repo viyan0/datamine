@@ -90,7 +90,7 @@ export function ConversationAnalysis({
           {t(demo ? 'sampleBadge' : busy ? 'analyzing' : 'automatic')}
         </span>
       </div>
-      <p className="analysis-caption">{t(demo ? 'demoHint' : 'hint')}</p>
+      {demo && <p className="analysis-caption">{t('demoHint')}</p>}
       {!demo && loaded && !state.configured && <p className="analysis-notice">{t('setup')}</p>}
       {!demo && state.configured && state.status === 'error' && (
         <p className="analysis-notice">{t('retrying')}</p>

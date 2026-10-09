@@ -340,7 +340,7 @@ async function snapshot(job: Job) {
         eq(messages.direction, 'inbound'),
         eq(messages.type, 'text'),
         job.waitingForOffer
-          ? sql`(${messages.providerTimestamp}, ${messages.createdAt}, ${messages.id}) <= (${trigger.providerTimestamp}, ${trigger.createdAt}, ${trigger.id})`
+          ? sql`(${messages.providerTimestamp}, ${messages.createdAt}, ${messages.id}) <= (select original.provider_timestamp, original.created_at, original.id from messages original where original.id=${job.triggerMessageId})`
           : undefined,
       ),
     )

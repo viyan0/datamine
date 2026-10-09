@@ -4,7 +4,7 @@ import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { getDb, getPool } from '../src/db';
 import * as schema from '../src/db/schema';
 import { encrypt } from '../src/lib/security';
@@ -1137,7 +1137,14 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         await customer('waiting-camera');
         await inbound('waiting-camera', 'camera offers');
         await processRecommendations(50);
-        await inbound('waiting-camera', 'more offers');
+        const request = await inbound('waiting-camera', 'more offers');
+        // Production PostgreSQL preserves microseconds that JavaScript Date truncates.
+        await db
+          .update(schema.messages)
+          .set({
+            createdAt: sql`date_trunc('milliseconds', ${schema.messages.createdAt}) + interval '500 microseconds'`,
+          })
+          .where(eq(schema.messages.id, request.messageId));
         await processRecommendations(50);
         assert.equal(count('waiting-camera'), 2);
         assert.match(

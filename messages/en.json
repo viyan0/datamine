@@ -496,7 +496,7 @@
     "createTemplate": "Create template with AI",
     "templateChecking": "Checking approval",
     "templateStatus": "Meta status: {status}",
-    "templatePendingHint": "Approval is checked automatically. You can send after Meta approves.",
+    "templatePendingHint": "Approval is checked automatically. Open chats can receive normal replies while this template is in review.",
     "templateSenderHint": "Connect a Datamine sender to create templates.",
     "templateDraftHint": "Haiku drafts a message from this offer. Check the wording and make any changes before submitting.",
     "templateMessage": "Message to customers",
@@ -515,7 +515,7 @@
       "DELETED": "Deleted",
       "LIMIT_EXCEEDED": "Limit reached"
     },
-    "replyReady": "Ready to send now · {count} customers",
+    "replyReady": "Ready to send now · {count, plural, one {# customer} other {# customers}}",
     "replyReadyHint": "Real WhatsApp replies from {sender}. No template approval is needed while these 24-hour chat windows are open. Only eligible customers will receive this offer.",
     "replyNeedsMessage": "A fresh customer message is needed",
     "replyNeedsMessageHint": "Before presenting, ask the customer to message {sender}. Their 24-hour reply window will open and this page will update automatically. An approved template can reach customers outside that window.",

@@ -172,32 +172,6 @@ export function Dashboard({
       {menu && (
         <button className="sidebar-scrim" aria-label={t('close')} onClick={() => setMenu(false)} />
       )}
-      <nav className="icon-rail" aria-label={t('workspace')}>
-        <Link className="rail-brand" href={root} aria-label="Datamine">
-          D
-        </Link>
-        {nav
-          .filter((item) => ['overview', 'inbox', 'campaigns', 'agencies'].includes(item.key))
-          .map(({ key, icon: Icon }) => (
-            <Link
-              key={key}
-              href={`${root}${key === 'overview' ? '' : `/${key}`}`}
-              className={`rail-link ${section === key ? 'selected' : ''}`}
-              aria-label={t(key)}
-              title={t(key)}
-            >
-              <Icon size={19} />
-            </Link>
-          ))}
-        <Link
-          className={`rail-link rail-settings ${section === 'settings' ? 'selected' : ''}`}
-          href={`${root}/settings`}
-          aria-label={t('settings')}
-          title={t('settings')}
-        >
-          <Settings2 size={19} />
-        </Link>
-      </nav>
       <aside className={`sidebar ${menu ? 'sidebar-open' : ''}`}>
         <div className="sidebar-brand">
           <Brand />
@@ -221,7 +195,9 @@ export function Dashboard({
                 aria-current={section === key ? 'page' : undefined}
                 onClick={() => setMenu(false)}
               >
-                <Icon size={18} />
+                <span className="nav-icon">
+                  <Icon size={18} />
+                </span>
                 <span>{t(key)}</span>
                 {key === 'agencies' && <span className="nav-count">{data.agencies.length}</span>}
               </Link>

@@ -496,7 +496,7 @@
     "createTemplate": "إنشاء قالب بالذكاء الاصطناعي",
     "templateChecking": "جارٍ التحقق من الموافقة",
     "templateStatus": "حالة Meta: {status}",
-    "templatePendingHint": "نتحقق من الموافقة تلقائياً. يمكنك الإرسال بعد موافقة Meta.",
+    "templatePendingHint": "تُراجَع الموافقة تلقائياً. يمكن إرسال ردود عادية للمحادثات المفتوحة أثناء مراجعة القالب.",
     "templateSenderHint": "اربط رقم إرسال Datamine لإنشاء القوالب.",
     "templateDraftHint": "يصيغ Haiku رسالة من هذا العرض. راجع النص وعدّله قبل الإرسال للمراجعة.",
     "templateMessage": "الرسالة للعملاء",

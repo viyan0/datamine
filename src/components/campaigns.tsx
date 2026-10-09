@@ -31,7 +31,7 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
     [creating, setCreating] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
-    [configured, setConfigured] = useState(demo);
+    [configured, setConfigured] = useState<boolean | null>(demo ? true : null);
   const [setup, setSetup] = useState<{
     sender: { id: string; label: string; displayPhone: string } | null;
     templates: ManagedTemplate[];
@@ -188,7 +188,7 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
         <Sparkles size={20} />
         <p>{t(demo ? 'demoHint' : 'automaticHint')}</p>
       </div>
-      {!configured && !demo && <p className="notice">{t('aiSetup')}</p>}
+      {configured === false && !demo && <p className="notice">{t('aiSetup')}</p>}
       <div className="toolbar">
         <span>{t('count', { count: items.length })}</span>
         {canCreate && (
@@ -300,7 +300,7 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
                 <>
                   {!demo && !['sending', 'complete', 'cancelled'].includes(current.status) && (
                     <>
-                      {showReply && (
+                      {showReply && current.status === 'ready' && !!current.recipients?.length && (
                         <div
                           className={`offer-readiness ${replyCount ? 'ready' : ''}`}
                           role="status"

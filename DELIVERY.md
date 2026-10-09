@@ -1,5 +1,17 @@
 # Datamine delivery
 
+## Keep unmatched requests open, 2026-10-09
+
+Application commit `0e3973a` is pushed to GitHub and deployed at https://datamine-lilac.vercel.app as `dpl_4b6XdkFoBmiFZds4h14iCCkgEdSY`. The production build and TypeScript compilation passed. Migration `0012_waiting_offer_requests` is applied to local and production PostgreSQL.
+
+An explicit offer request with a known topic now remains open when no suitable unseen offer exists. The customer receives one acknowledgement explaining that Datamine will send one matching offer when available. Saving, editing or publishing an offer wakes saved requests across participating businesses. A 15-minute recovery check covers missed wakes; unchanged inventory does not incur another AI call. The saved topic and original chat context survive later unrelated messages. One accepted offer consumes the request, so further catalog changes cannot generate another delivery without MORE. Topic stops cancel the corresponding waiting permission; global withdrawal deletes it.
+
+After the central WhatsApp reply window closes, the selected offer is submitted as a complete marketing template through the existing Meta integration. Pending approval is checked automatically before delivery. Rejected templates, unsupported content/languages and exhausted preparation failures remain unsent and require correction; the request is retained. The current simple template adapter supports complete text up to 1024 characters. Consent, current offer availability and profile changes are rechecked before sending. Changing a pending offer wakes matching again. An uncertain provider submission is never automatically replayed.
+
+Verification: all 68 automated checks passed, including a new-business offer fulfilling a saved request once, later topic changes, concurrent workers, unchanged-catalog AI suppression, unrelated offers, topic/global stops and approved-template delivery outside 24 hours. These tests use isolated PostgreSQL with mocked AI and Meta. ESLint and TypeScript passed. The production check caught PostgreSQL microseconds being truncated through JavaScript Date in the historical-message cutoff; this was fixed by comparing database timestamps directly and covered by the 28 recommendation checks rerun after the correction.
+
+The real customer's existing `more laptop offers` request (number ending 8010) was preserved after checking consent, latest inbound request, prior delivery timing and the absence of an offer submission. Its old acknowledgement remains in message history with a distinct idempotency key. The deployed worker used real Haiku to check the catalog and left the request in `waiting`, with its catalogue hash recorded, a future recovery time and no new outbound message. Production health returned 200 with PostgreSQL connected. No synthetic offers were added to production. A future live business offer is still needed to demonstrate actual fulfillment of this waiting request; the isolated tests verified that delivery sequence.
+
 ## Direct offer requests and topic changes, 2026-10-09
 
 Application commit `f9ffb13` is pushed to GitHub and deployed at https://datamine-lilac.vercel.app as `dpl_EUZEcBeTV7PRtfJoiwsYtcVMbkMK`. The production build and TypeScript compilation passed. No database migration is required.

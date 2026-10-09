@@ -6,7 +6,7 @@ import { requireAgency, requireSession, HttpError } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { attachCampaignTemplate, campaignSender } from '@/lib/campaigns';
 import { createMarketingTemplate, templateBodySchema, TemplateError } from '@/lib/meta-templates';
-import { draftOfferTemplate } from '@/lib/template-draft';
+import { draftOfferTemplate, withOfferDetails } from '@/lib/template-draft';
 import { AnalysisError } from '@/lib/anthropic';
 import { decrypt } from '@/lib/security';
 import { wakeAutomation } from '@/lib/automation';
@@ -38,6 +38,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           offerText: c.offerText,
           locale: c.locale,
           businessName: row.businessName,
+          contactPhone: c.contactPhone,
+          imageUrl: c.imageUrl,
         }),
       );
     const sender = await campaignSender(c.agencyId, c.senderId);
@@ -48,9 +50,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       campaignId: c.id,
       language: c.locale,
       body: templateBodySchema.parse(
-        input.body.toLocaleLowerCase().includes(row.businessName.toLocaleLowerCase())
-          ? input.body
-          : `Datamine · ${row.businessName}\n\n${input.body}`,
+        withOfferDetails(
+          input.body.toLocaleLowerCase().includes(row.businessName.toLocaleLowerCase())
+            ? input.body
+            : `Datamine · ${row.businessName}\n\n${input.body}`,
+          c,
+        ),
       ),
     });
     await attachCampaignTemplate(c.id, template, sender.id);

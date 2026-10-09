@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { isNotNull, and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
-import { products, memberships, campaigns } from '@/db/schema';
+import { products, memberships, campaigns, connections } from '@/db/schema';
 import { agencyAccessForUser, HttpError } from './access';
 import type { ProductView } from './product-types';
 import { productOfferText } from './product-types';
 import { wakeWaitingRecommendations } from './recommendations';
+import { offerImageSchema, offerPhoneSchema } from './offer-media';
 
 export type { ProductView } from './product-types';
 export { productOfferText } from './product-types';
@@ -24,6 +25,8 @@ const price = z
 const fields = z.object({
   name: z.string().trim().min(2).max(100),
   description: z.string().trim().max(1500),
+  contactPhone: offerPhoneSchema,
+  imageUrl: offerImageSchema,
   price,
   currency: z
     .string()
@@ -38,6 +41,8 @@ export const createProductSchema = fields
   .extend({
     agencyId: z.string().min(1),
     description: fields.shape.description.default(''),
+    contactPhone: fields.shape.contactPhone.default(''),
+    imageUrl: fields.shape.imageUrl.default(''),
     currency: fields.shape.currency.default('IQD'),
     locale: fields.shape.locale.default('en'),
     expiresAt: fields.shape.expiresAt.default(() => new Date(Date.now() + 7 * 86400000)),
@@ -74,6 +79,8 @@ async function saveCatalogCampaign(
   const offer = {
     title: product.name,
     offerText: productOfferText(product, product.locale),
+    contactPhone: product.contactPhone,
+    imageUrl: product.imageUrl,
     locale: product.locale,
     networkEnabled: product.active,
     networkExpiresAt: product.active ? product.expiresAt : null,
@@ -123,6 +130,7 @@ export async function listProducts(current: CurrentUser): Promise<ProductView[]>
 export async function createProduct(current: CurrentUser, input: unknown) {
   const fields = createProductSchema.parse(input);
   await agencyAccessForUser(current, fields.agencyId, true);
+  fields.contactPhone = await businessOfferPhone(fields.agencyId, fields.contactPhone);
   validateAvailability(fields);
   const saved = await getDb().transaction(async (tx) => {
     const [product] = await tx
@@ -145,6 +153,8 @@ export async function updateProduct(current: CurrentUser, id: string, input: unk
     .where(eq(products.id, id));
   if (!existing) throw new HttpError(404, 'notFound');
   await agencyAccessForUser(current, existing.agencyId, true);
+  if (fields.contactPhone !== undefined)
+    fields.contactPhone = await businessOfferPhone(existing.agencyId, fields.contactPhone);
   const saved = await db.transaction(async (tx) => {
     const [product] = await tx
       .update(products)
@@ -163,6 +173,19 @@ export async function updateProduct(current: CurrentUser, id: string, input: unk
   });
   await wakeWaitingRecommendations();
   return saved;
+}
+
+export async function businessOfferPhone(agencyId: string, provided = '') {
+  if (provided) return offerPhoneSchema.parse(provided);
+  const [sender] = await getDb()
+    .select({ phone: connections.displayPhone })
+    .from(connections)
+    .where(and(eq(connections.agencyId, agencyId), isNotNull(connections.verifiedAt)))
+    .orderBy(desc(connections.verifiedAt))
+    .limit(1);
+  const parsed = offerPhoneSchema.safeParse(sender?.phone || '');
+  if (!parsed.success || !parsed.data) throw new HttpError(422, 'offerContactRequired');
+  return parsed.data;
 }
 
 export async function getActiveProduct(

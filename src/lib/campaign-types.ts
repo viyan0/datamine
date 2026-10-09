@@ -4,6 +4,8 @@ export type CampaignView = {
   agencyName: string;
   title: string;
   offerText: string;
+  contactPhone?: string;
+  imageUrl?: string;
   locale: string;
   status: string;
   networkEnabled?: boolean;

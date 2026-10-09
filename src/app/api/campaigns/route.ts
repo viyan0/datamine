@@ -9,7 +9,8 @@ import { listCampaigns, networkAvailability } from '@/lib/campaigns';
 import { analysisConfigured } from '@/lib/anthropic';
 import { wakeAutomation } from '@/lib/automation';
 import { wakeWaitingRecommendations } from '@/lib/recommendations';
-import { getActiveProduct } from '@/lib/products';
+import { businessOfferPhone, getActiveProduct } from '@/lib/products';
+import { offerImageSchema, offerPhoneSchema } from '@/lib/offer-media';
 import { productOfferText } from '@/lib/product-types';
 export async function GET() {
   try {
@@ -40,6 +41,8 @@ export async function POST(request: Request) {
         agencyId: z.string().min(1),
         productId: z.string().min(1).optional(),
         title: z.string().trim().min(2).max(100).optional(),
+        contactPhone: offerPhoneSchema.default(''),
+        imageUrl: offerImageSchema.default(''),
         offerText: z.string().trim().min(10).max(3000).optional(),
         locale: z.enum(['en', 'ar', 'ckb']),
         networkEnabled: z.boolean().default(false),
@@ -50,6 +53,8 @@ export async function POST(request: Request) {
     const { session, membership } = await requireAgency(input.agencyId, true);
     if (!['owner', 'admin'].includes(membership.role)) throw new HttpError(403, 'forbidden');
     const id = randomUUID();
+    if (!input.productId)
+      input.contactPhone = await businessOfferPhone(input.agencyId, input.contactPhone);
     await getDb().transaction(async (tx) => {
       const product = input.productId
         ? await getActiveProduct(input.agencyId, input.productId, tx)
@@ -59,6 +64,8 @@ export async function POST(request: Request) {
         ...input,
         title: product ? product.name : input.title!,
         offerText: product ? productOfferText(product, input.locale) : input.offerText!,
+        contactPhone: product ? product.contactPhone : input.contactPhone,
+        imageUrl: product ? product.imageUrl : input.imageUrl,
         ...networkAvailability(input.networkEnabled, input.networkExpiresAt),
         createdBy: session.user.id,
       });

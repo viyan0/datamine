@@ -7,6 +7,7 @@ import {
   campaignRecipients,
   conversations,
   customerConsents,
+  consentInvitations,
   enrollmentLinks,
   messages,
   profileEvents,
@@ -18,6 +19,7 @@ import { sendMetaText } from './meta';
 import { replyWindowOpen } from './inbox-types';
 import { purgeRecommendations } from './recommendations';
 import { centralConnection } from './central-whatsapp';
+import { processConsentInvitations } from './consent-invitations';
 
 type Transaction = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0];
 export const whatsappConsentVersion = '2026-10-09-whatsapp-v3';
@@ -82,6 +84,7 @@ export async function refreshOfferAudiences(tx: Transaction, locales: string[]) 
     );
 }
 export async function clearCustomerData(tx: Transaction, phone: string) {
+  await tx.delete(consentInvitations).where(eq(consentInvitations.phone, phone));
   await purgeRecommendations(tx, phone);
   const profiles = await tx.select().from(sharedProfiles).where(eq(sharedProfiles.phone, phone));
   for (const p of profiles) {
@@ -133,11 +136,32 @@ export async function handleCustomerConsent(
   },
 ) {
   const central = await centralConnection(tx);
-  if (!central || central.id !== input.connectionId) return { store: false, accepted: false };
+  if (!central) return { store: false, accepted: false };
   const [business] = await tx
     .select({ locale: agencies.locale })
     .from(agencies)
     .where(eq(agencies.id, input.agencyId));
+  if (central.id !== input.connectionId) {
+    const [consent] = await tx
+      .select()
+      .from(customerConsents)
+      .where(eq(customerConsents.phone, input.phone))
+      .for('update');
+    if (consent?.status === 'declined') return { store: false, accepted: false };
+    if (!consent)
+      await tx
+        .insert(consentInvitations)
+        .values({
+          phone: input.phone,
+          connectionId: input.connectionId,
+          locale: business.locale,
+          messageId: randomUUID(),
+          lastInboundAt: input.timestamp,
+        })
+        .onConflictDoNothing();
+    // YES at a business is not permission for Datamine. There is one central approval.
+    return { store: true, accepted: consent?.status === 'accepted' };
+  }
   await tx
     .insert(customerConsents)
     .values({
@@ -182,6 +206,25 @@ export async function handleCustomerConsent(
     c.noticeAt &&
     input.timestamp.getTime() >= Math.floor(c.noticeAt.getTime() / 1000) * 1000
   ) {
+    await tx
+      .insert(conversations)
+      .values({
+        id: randomUUID(),
+        agencyId: central.agencyId,
+        connectionId: central.id,
+        contactPhone: input.phone,
+        name: input.name,
+        lastInboundAt: input.timestamp,
+        lastMessageAt: input.timestamp,
+        analysisStatus: 'pending',
+      })
+      .onConflictDoUpdate({
+        target: [conversations.connectionId, conversations.contactPhone],
+        set: {
+          lastInboundAt: sql`greatest(${conversations.lastInboundAt}, ${input.timestamp})`,
+          lastMessageAt: sql`greatest(${conversations.lastMessageAt}, ${input.timestamp})`,
+        },
+      });
     await tx
       .update(customerConsents)
       .set({
@@ -270,6 +313,7 @@ export async function consentAllowsAnalysis(phone: string) {
   return c?.status === 'accepted';
 }
 export async function processConsentReplies(limit = 2) {
+  await processConsentInvitations(limit);
   const db = getDb();
   await db
     .update(customerConsents)

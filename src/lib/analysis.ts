@@ -33,7 +33,10 @@ async function sourceMessages(c: typeof conversations.$inferSelect): Promise<Sou
         eq(messages.agencyId, c.agencyId),
         eq(messages.connectionId, c.connectionId),
         eq(messages.contactPhone, c.contactPhone),
-        eq(messages.type, 'text'),
+        or(
+          eq(messages.type, 'text'),
+          and(eq(messages.direction, 'outbound'), inArray(messages.type, ['image', 'template'])),
+        ),
         or(
           eq(messages.direction, 'inbound'),
           inArray(messages.deliveryStatus, ['accepted', 'sent', 'delivered', 'read']),
@@ -214,7 +217,6 @@ export async function analyzeConversation(agencyId: string, id: string, locale: 
             decisionMessageId: analysis.result.stopOffers!.messageId,
             replyStatus: 'queued',
             replyMessageId: randomUUID(),
-            replyConnectionId: c.connectionId,
             replyStartedAt: null,
           })
           .where(eq(customerConsents.phone, c.contactPhone));

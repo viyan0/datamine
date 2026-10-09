@@ -91,6 +91,8 @@ export function Products({ data, demo }: { data: WorkspaceData; demo: boolean })
       ...(existing ? {} : { agencyId: String(form.get('agencyId') || '') }),
       name: String(form.get('name') || '').trim(),
       description: String(form.get('description') || '').trim(),
+      contactPhone: String(form.get('contactPhone') || '').replace(/[\s()+-]/g, ''),
+      imageUrl: String(form.get('imageUrl') || '').trim(),
       price: String(form.get('price') || ''),
       currency: String(form.get('currency') || '')
         .trim()
@@ -228,6 +230,17 @@ export function Products({ data, demo }: { data: WorkspaceData; demo: boolean })
         <div className="product-grid">
           {visible.map((product) => (
             <article className="panel product-card" key={product.id}>
+              {product.imageUrl && (
+                // External offer photos are displayed directly, without a server-side proxy.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  className="offer-photo"
+                  src={product.imageUrl}
+                  alt={product.name}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+              )}
               <div className="product-card-heading">
                 <span className="product-icon">
                   <Tags size={22} />
@@ -246,6 +259,16 @@ export function Products({ data, demo }: { data: WorkspaceData; demo: boolean })
               </div>
               <small>{data.agencies.find((item) => item.id === product.agencyId)?.name}</small>
               <h2 dir="auto">{product.name}</h2>
+              {product.contactPhone && (
+                <a
+                  href={`https://wa.me/${product.contactPhone}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  dir="ltr"
+                >
+                  +{product.contactPhone}
+                </a>
+              )}
               <p className="product-description" dir="auto">
                 {product.description}
               </p>
@@ -354,6 +377,32 @@ export function Products({ data, demo }: { data: WorkspaceData; demo: boolean })
                 defaultValue={draft?.description}
                 disabled={busy}
               />
+            </label>
+            <label>
+              {t('contactPhone')}
+              <input
+                name="contactPhone"
+                type="tel"
+                required
+                maxLength={30}
+                defaultValue={draft?.contactPhone}
+                disabled={busy}
+                dir="ltr"
+                placeholder="+964…"
+              />
+            </label>
+            <label>
+              {t('imageUrl')}
+              <input
+                name="imageUrl"
+                type="url"
+                maxLength={2000}
+                defaultValue={draft?.imageUrl}
+                disabled={busy}
+                dir="ltr"
+                placeholder="https://…"
+              />
+              <small className="form-hint">{t('imageHint')}</small>
             </label>
             <div className="form-grid">
               <label>

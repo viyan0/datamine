@@ -15,7 +15,8 @@ import { HttpError } from './access';
 import { requestHaiku, analysisConfigured } from './anthropic';
 import { analysisModel } from './analysis-types';
 import { decrypt } from './security';
-import { approvedTemplates, sendMetaTemplate, sendMetaText } from './meta';
+import { approvedTemplates, sendMetaTemplate, sendMetaText, sendMetaImage } from './meta';
+import { offerDelivery } from './offer-media';
 import { replyWindowOpen } from './inbox-types';
 import { campaignReplyBody } from './campaign-delivery';
 import { marketingTemplates } from './meta-templates';
@@ -78,6 +79,8 @@ async function checkTemplateSeller(c: Campaign, template: { body: string }) {
     .where(eq(agencies.id, c.agencyId));
   if (!business || !template.body.toLocaleLowerCase().includes(business.name.toLocaleLowerCase()))
     throw new HttpError(422, 'templateSellerMissing');
+  if (c.contactPhone && !template.body.includes(`https://wa.me/${c.contactPhone}`))
+    throw new HttpError(422, 'templateContactMissing');
 }
 const audienceSchema = z.strictObject({
   summary: z.string().min(1).max(800),
@@ -175,6 +178,8 @@ export async function listCampaigns(agencyIds: string[], admin: boolean): Promis
         agencyName,
         title: c.title,
         offerText: c.offerText,
+        contactPhone: c.contactPhone,
+        imageUrl: c.imageUrl,
         locale: c.locale,
         status: c.status,
         networkEnabled: c.networkEnabled,
@@ -626,6 +631,10 @@ export async function deliverRecipient(id: string) {
           .where(eq(campaigns.id, c.id));
         return;
       }
+      const content =
+        c.deliveryMode === 'reply'
+          ? offerDelivery(campaignReplyBody({ ...c, businessName: business.name }), c.imageUrl)
+          : { type: 'template', body: c.template!.body, imageUrl: null };
       const [message] = await tx
         .insert(messages)
         .values({
@@ -635,11 +644,9 @@ export async function deliverRecipient(id: string) {
           requestId: r.id,
           direction: 'outbound',
           contactPhone: p.phone,
-          type: c.deliveryMode === 'reply' ? 'text' : 'template',
-          body:
-            c.deliveryMode === 'reply'
-              ? campaignReplyBody({ ...c, businessName: business.name })
-              : c.template!.body,
+          type: content.type,
+          body: content.body,
+          imageUrl: content.imageUrl,
           deliveryStatus: 'submitting',
           providerTimestamp: new Date(),
         })
@@ -657,7 +664,9 @@ export async function deliverRecipient(id: string) {
       };
       const result =
         c.deliveryMode === 'reply'
-          ? await sendMetaText({ ...delivery, body: message.body! })
+          ? content.imageUrl
+            ? await sendMetaImage({ ...delivery, body: content.body, imageUrl: content.imageUrl })
+            : await sendMetaText({ ...delivery, body: message.body! })
           : await sendMetaTemplate({ ...delivery, template: c.template! });
       await tx
         .update(messages)

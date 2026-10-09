@@ -405,7 +405,18 @@ function ConversationView({
               className={`message-row ${m.direction === 'outbound' ? 'outbound' : 'inbound'}`}
             >
               <div className="message-bubble">
-                <p dir="auto">{m.type === 'text' ? m.body : t('unsupported', { type: m.type })}</p>
+                {m.imageUrl && (
+                  // Display the same public photo that was sent through WhatsApp.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    className="offer-photo"
+                    src={m.imageUrl}
+                    alt={t('offerImage')}
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                  />
+                )}
+                <p dir="auto">{m.body || t('unsupported', { type: m.type })}</p>
                 <div className="message-meta">
                   <time
                     dateTime={m.timestamp}

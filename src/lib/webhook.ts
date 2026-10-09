@@ -9,6 +9,7 @@ import {
   conversations,
   sharedProfiles,
   customerConsents,
+  consentInvitations,
 } from '@/db/schema';
 import { decrypt, verifySignature } from './security';
 import { HttpError } from './access';
@@ -236,6 +237,17 @@ export async function ingestWebhook(raw: string, signature: string | null) {
             const ranks: Record<string, number> = { sent: 2, failed: 3, delivered: 4, read: 5 };
             const rank = ranks[status.status];
             if (rank) {
+              await tx
+                .update(consentInvitations)
+                .set({
+                  status: sql`case when (case ${consentInvitations.status} when 'read' then 5 when 'delivered' then 4 when 'failed' then 3 when 'sent' then 2 else 0 end) < ${rank} then ${status.status} else ${consentInvitations.status} end`,
+                })
+                .where(
+                  and(
+                    eq(consentInvitations.connectionId, connection.id),
+                    eq(consentInvitations.messageId, status.biz_opaque_callback_data),
+                  ),
+                );
               const receipt = await tx
                 .update(customerConsents)
                 .set({

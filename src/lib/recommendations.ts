@@ -15,7 +15,8 @@ import {
 } from '@/db/schema';
 import { analysisConfigured, requestHaiku } from './anthropic';
 import { replyWindowOpen } from './inbox-types';
-import { sendMetaTemplate, sendMetaText } from './meta';
+import { sendMetaTemplate, sendMetaText, sendMetaImage } from './meta';
+import { offerDelivery, sellerContact } from './offer-media';
 import { createMarketingTemplate } from './meta-templates';
 import type { ManagedTemplate } from './template-types';
 import { moreRequestFollowsOffer, normalizeOfferTopic, offerCommand } from './offer-preferences';
@@ -101,16 +102,19 @@ export async function scheduleRecommendation(tx: Transaction, conversationId: st
     .from(customerConsents)
     .where(eq(customerConsents.phone, c.contactPhone));
   if (!p || p.status !== 'active' || p.offerHold || consent?.status !== 'accepted') return;
+  const [centralThread] = await tx
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(
+      and(eq(conversations.connectionId, central.id), eq(conversations.contactPhone, p.phone)),
+    );
+  if (!centralThread) return;
   // Finishing one business's analysis can release another thread that was on hold.
   const threads = await tx
     .select()
     .from(conversations)
     .where(
-      and(
-        eq(conversations.contactPhone, p.phone),
-        eq(conversations.analysisStatus, 'complete'),
-        eq(conversations.connectionId, central.id),
-      ),
+      and(eq(conversations.contactPhone, p.phone), eq(conversations.analysisStatus, 'complete')),
     );
   for (const thread of threads) {
     const latest = await latestInbound(tx, thread);
@@ -251,7 +255,6 @@ export async function handleImmediateTopicStop(
     .where(
       and(
         eq(recommendationJobs.profileId, p.id),
-        eq(conversations.connectionId, input.connectionId),
         or(
           and(
             isNotNull(recommendationJobs.campaignId),
@@ -317,7 +320,14 @@ async function snapshot(job: Job) {
   if (!central) return null;
   const [c] = await db.select().from(conversations).where(eq(conversations.id, job.conversationId));
   const [p] = await db.select().from(sharedProfiles).where(eq(sharedProfiles.id, job.profileId));
-  if (!c || !p || c.connectionId !== central.id || c.agencyId !== central.agencyId) return null;
+  if (!c || !p || c.contactPhone !== p.phone) return null;
+  const [deliveryThread] = await db
+    .select()
+    .from(conversations)
+    .where(
+      and(eq(conversations.connectionId, central.id), eq(conversations.contactPhone, p.phone)),
+    );
+  if (!deliveryThread) return null;
   const [consent] = await db
     .select()
     .from(customerConsents)
@@ -383,10 +393,12 @@ async function snapshot(job: Job) {
       title: offer.title,
       text: offer.offerText,
       businessName,
+      contactPhone: offer.contactPhone,
+      imageUrl: offer.imageUrl,
       expiresAt: offer.networkExpiresAt!.toISOString(),
     }))
     .filter((offer) => !history.some((h) => h.campaignId === offer.id));
-  return { c, p, inbound, history, offers };
+  return { c, deliveryThread, p, inbound, history, offers };
 }
 
 function noOfferCopy(
@@ -437,11 +449,19 @@ async function rank(job: Job) {
     return;
   }
   const source = await snapshot(job);
-  if (!source || (!job.waitingForOffer && !replyWindowOpen(source.c.lastInboundAt))) {
+  if (
+    !source ||
+    (!job.waitingForOffer &&
+      source.c.id === source.deliveryThread.id &&
+      !replyWindowOpen(source.deliveryThread.lastInboundAt))
+  ) {
     await db
       .update(recommendationJobs)
       .set({
-        status: source && !replyWindowOpen(source.c.lastInboundAt) ? 'windowClosed' : 'noMatch',
+        status:
+          source && !replyWindowOpen(source.deliveryThread.lastInboundAt)
+            ? 'windowClosed'
+            : 'noMatch',
         dueAt: null,
         runId: null,
       })
@@ -463,7 +483,16 @@ async function rank(job: Job) {
       .where(and(eq(recommendationJobs.id, job.id), eq(recommendationJobs.runId, job.runId!)));
     return;
   }
-  const previous = source.history.find((h) => h.conversationId === job.conversationId);
+  const previous = source.history[0];
+  const contextualMore =
+    offerCommand(source.inbound[0].body || '') === 'more' &&
+    !!previous &&
+    !source.inbound.some(
+      (m) =>
+        m.id !== job.triggerMessageId &&
+        m.timestamp >= previous.startedAt! &&
+        !offerCommand(m.body || ''),
+    );
   const offerRequested =
     job.waitingForOffer ||
     offerCommand(source.inbound[0].body || '') === 'more' ||
@@ -490,8 +519,9 @@ async function rank(job: Job) {
       offerRequested,
       language: source.p.language,
       latestMessageId: job.triggerMessageId,
-      currentInterest: job.waitingForOffer ? null : source.c.analysis?.result.subject || null,
-      requestedTopic: job.waitingForOffer ? job.topic : null,
+      currentInterest:
+        job.waitingForOffer || contextualMore ? null : source.c.analysis?.result.subject || null,
+      requestedTopic: job.waitingForOffer ? job.topic : contextualMore ? previous.topic : null,
       previousTopic: previous?.topic || null,
       waitingTopics: [...new Set(source.history.map((h) => h.topic).filter(Boolean))],
       blockedTopics: source.p.blockedTopics,
@@ -549,6 +579,7 @@ async function rank(job: Job) {
   }
   const currentInterestEvidence =
     job.waitingForOffer ||
+    contextualMore ||
     !source.c.analysis?.result.subject ||
     ids.has(source.c.analysis.result.subject.messageId);
   const previousSameTopic = source.history.find(
@@ -665,7 +696,7 @@ async function rank(job: Job) {
   }
   if (replyWithNoOffer) {
     const waiting = !!topic && commandEvidence && requestFollowsOffer;
-    const notify = !job.noticeMessageId && replyWindowOpen(source.c.lastInboundAt);
+    const notify = !job.noticeMessageId && replyWindowOpen(source.deliveryThread.lastInboundAt);
     await db
       .update(recommendationJobs)
       .set({
@@ -697,7 +728,16 @@ async function rank(job: Job) {
       ar: 'رد هنا لمزيد من التفاصيل.',
       ckb: 'بۆ زانیاریی زیاتر لێرە وەڵام بدەرەوە.',
     }[source.p.language] || 'Reply here for details.';
-  const body = `Datamine · ${offer.businessName}\n\n${offer.text}\n\n${job.waitingForOffer ? '' : `${reason}\n\n`}${contact}\n\n${footer(source.p.language)}`;
+  const body = [
+    `Datamine · ${offer.businessName}`,
+    offer.text,
+    sellerContact(offer.contactPhone, source.p.language),
+    !job.waitingForOffer && !offer.imageUrl ? reason : '',
+    offer.contactPhone ? '' : contact,
+    footer(source.p.language),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
   if (body.length > 4096) {
     await db
       .update(recommendationJobs)
@@ -714,6 +754,7 @@ async function rank(job: Job) {
       campaignId: offer.id,
       campaignHash: hash(offer),
       body,
+      imageUrl: offer.imageUrl || null,
       reason,
       sourceHash,
       profileUpdatedAt: source.p.updatedAt,
@@ -740,7 +781,7 @@ export async function deliverRecommendation(id: string) {
   if (!job) return;
   let template: ManagedTemplate | undefined;
   let templateSenderId: string | undefined;
-  if (job.waitingForOffer && job.campaignId) {
+  if (job.campaignId) {
     const [candidate] = await db
       .select({ offer: campaigns, businessName: agencies.name })
       .from(campaigns)
@@ -758,6 +799,8 @@ export async function deliverRecommendation(id: string) {
         title: offer.title,
         text: offer.offerText,
         businessName: candidate.businessName,
+        contactPhone: offer.contactPhone,
+        imageUrl: offer.imageUrl,
         expiresAt: offer.networkExpiresAt.toISOString(),
       }) !== job.campaignHash
     ) {
@@ -774,10 +817,20 @@ export async function deliverRecommendation(id: string) {
         .where(and(eq(recommendationJobs.id, id), eq(recommendationJobs.status, 'submitting')));
       return;
     }
+    const senderForWindow = await centralConnection();
+    const [personForWindow] = await db
+      .select()
+      .from(sharedProfiles)
+      .where(eq(sharedProfiles.id, job.profileId));
     const [thread] = await db
       .select()
       .from(conversations)
-      .where(eq(conversations.id, job.conversationId));
+      .where(
+        and(
+          eq(conversations.connectionId, senderForWindow?.id || ''),
+          eq(conversations.contactPhone, personForWindow?.phone || ''),
+        ),
+      );
     if (thread && !replyWindowOpen(thread.lastInboundAt)) {
       // This is only template preparation. Consent, stops and the selected offer are
       // checked again under locks before any customer message can be submitted.
@@ -794,7 +847,7 @@ export async function deliverRecommendation(id: string) {
           token: decrypt(sender.accessTokenEncrypted, `${sender.id}:token`),
           campaignId: job.campaignId,
           language: profile.language,
-          body: job.body!,
+          body: job.imageUrl ? `${job.body}\n\n${job.imageUrl}` : job.body!,
         });
         if (template.status !== 'APPROVED') {
           await db
@@ -850,6 +903,18 @@ export async function deliverRecommendation(id: string) {
         .from(conversations)
         .where(eq(conversations.id, job.conversationId));
       const sender = await centralConnection(tx, true);
+      const [deliveryThread] =
+        sender && p
+          ? await tx
+              .select()
+              .from(conversations)
+              .where(
+                and(
+                  eq(conversations.connectionId, sender.id),
+                  eq(conversations.contactPhone, p.phone),
+                ),
+              )
+          : [];
       let status = 'cancelled';
       let allowed =
         !!p &&
@@ -857,12 +922,17 @@ export async function deliverRecommendation(id: string) {
         consent?.status === 'accepted' &&
         !!c &&
         !!sender &&
-        c!.connectionId === sender.id &&
-        c!.agencyId === sender.agencyId &&
+        c!.contactPhone === p.phone &&
+        !!deliveryThread &&
         (!template || sender.id === templateSenderId) &&
         !!job.body &&
         job.body.length <= 4096;
-      if (allowed && c && !replyWindowOpen(c.lastInboundAt) && !template) {
+      if (
+        allowed &&
+        deliveryThread &&
+        !replyWindowOpen(deliveryThread.lastInboundAt) &&
+        !template
+      ) {
         allowed = false;
         status = job.waitingForOffer ? 'waiting' : 'windowClosed';
       }
@@ -912,6 +982,8 @@ export async function deliverRecommendation(id: string) {
                 title: offer.title,
                 text: offer.offerText,
                 businessName: business.name,
+                contactPhone: offer.contactPhone,
+                imageUrl: offer.imageUrl,
                 expiresAt: offer.networkExpiresAt?.toISOString(),
               }
             : null;
@@ -993,15 +1065,19 @@ export async function deliverRecommendation(id: string) {
         return;
       }
       const messageId = randomUUID();
+      const content = template
+        ? { type: 'template', body: template.body, imageUrl: null }
+        : offerDelivery(job.body!, job.imageUrl);
       await tx.insert(messages).values({
         id: messageId,
-        agencyId: c!.agencyId,
-        connectionId: c!.connectionId,
+        agencyId: sender!.agencyId,
+        connectionId: sender!.id,
         requestId: job.mode === 'response' && job.waitingForOffer ? `${job.id}:notice` : job.id,
         direction: 'outbound',
         contactPhone: p.phone,
-        type: template ? 'template' : 'text',
-        body: job.body,
+        type: content.type,
+        body: content.body,
+        imageUrl: content.imageUrl,
         deliveryStatus: 'submitting',
         providerTimestamp: new Date(),
       });
@@ -1014,7 +1090,9 @@ export async function deliverRecommendation(id: string) {
       };
       const result = template
         ? await sendMetaTemplate({ ...delivery, template })
-        : await sendMetaText({ ...delivery, body: job.body! });
+        : content.imageUrl
+          ? await sendMetaImage({ ...delivery, body: content.body, imageUrl: content.imageUrl })
+          : await sendMetaText({ ...delivery, body: content.body });
       await tx
         .update(messages)
         .set({
@@ -1041,7 +1119,7 @@ export async function deliverRecommendation(id: string) {
       await tx
         .update(conversations)
         .set({ lastMessageAt: new Date() })
-        .where(eq(conversations.id, c!.id));
+        .where(eq(conversations.id, deliveryThread!.id));
     });
   } catch {
     await db

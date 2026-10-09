@@ -55,6 +55,20 @@ export function sendMetaText(input: {
     content: { type: 'text', text: { preview_url: false, body: input.body } },
   });
 }
+export function sendMetaImage(input: {
+  phoneNumberId: string;
+  accessToken: string;
+  to: string;
+  messageId: string;
+  body: string;
+  imageUrl: string;
+}): ReturnType<typeof sendMetaText> {
+  if (input.body.length > 1024) return Promise.resolve({ status: 'failed' });
+  return sendMetaMessage({
+    ...input,
+    content: { type: 'image', image: { link: input.imageUrl, caption: input.body } },
+  });
+}
 export function sendMetaTemplate(input: {
   phoneNumberId: string;
   accessToken: string;

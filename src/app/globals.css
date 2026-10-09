@@ -2110,3 +2110,13 @@ html[dir='rtl'] .directional {
     visibility: hidden;
   }
 }
+
+.offer-photo {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}

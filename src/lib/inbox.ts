@@ -149,6 +149,7 @@ function serializeMessage(m: typeof messages.$inferSelect): InboxMessage {
   return {
     id: m.id,
     body: m.body,
+    imageUrl: m.imageUrl,
     type: m.type,
     direction: m.direction,
     deliveryStatus:

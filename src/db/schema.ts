@@ -177,6 +177,7 @@ export const messages = pgTable(
     contactPhone: text('contact_phone').notNull(),
     type: text('type').notNull(),
     body: text('body'),
+    imageUrl: text('image_url'),
     providerTimestamp: timestamp('provider_timestamp', { withTimezone: true }).notNull(),
     createdAt: createdAt(),
   },
@@ -280,6 +281,18 @@ export const customerConsents = pgTable('customer_consents', {
   replyStartedAt: timestamp('reply_started_at', { withTimezone: true }),
   createdAt: createdAt(),
 });
+export const consentInvitations = pgTable('consent_invitations', {
+  phone: text('phone').primaryKey(),
+  connectionId: text('connection_id')
+    .notNull()
+    .references(() => connections.id),
+  locale: text('locale').notNull(),
+  messageId: text('message_id').notNull().unique(),
+  status: text('status').default('queued').notNull(),
+  lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }).notNull(),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  createdAt: createdAt(),
+});
 export const profileEvents = pgTable('profile_events', {
   id: text('id').primaryKey(),
   profileId: text('profile_id')
@@ -300,6 +313,8 @@ export const products = pgTable(
       .references(() => agencies.id),
     name: text('name').notNull(),
     description: text('description').default('').notNull(),
+    contactPhone: text('contact_phone').default('').notNull(),
+    imageUrl: text('image_url').default('').notNull(),
     price: numeric('price', { precision: 12, scale: 2 }).notNull(),
     currency: text('currency').default('IQD').notNull(),
     locale: text('locale').default('en').notNull(),
@@ -329,6 +344,8 @@ export const campaigns = pgTable(
       .references(() => user.id),
     title: text('title').notNull(),
     offerText: text('offer_text').notNull(),
+    contactPhone: text('contact_phone').default('').notNull(),
+    imageUrl: text('image_url').default('').notNull(),
     productId: text('product_id').references(() => products.id),
     catalogOnly: boolean('catalog_only').default(false).notNull(),
     networkEnabled: boolean('network_enabled').default(false).notNull(),
@@ -410,6 +427,7 @@ export const recommendationJobs = pgTable(
     reason: text('reason'),
     body: text('body'),
     messageId: text('message_id').references(() => messages.id),
+    imageUrl: text('image_url'),
     dueAt: timestamp('due_at', { withTimezone: true }).defaultNow(),
     runId: text('run_id'),
     startedAt: timestamp('started_at', { withTimezone: true }),

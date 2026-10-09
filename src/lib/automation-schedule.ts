@@ -2,6 +2,9 @@
 // Respect active 90-second claims rather than repeatedly waking a busy job.
 export const automationDueSql = `
   select min(due_at) as due_at from (
+    select case when status='queued' then now() else started_at + interval '91 seconds' end as due_at
+    from consent_invitations where status in ('queued','submitting')
+    union all
     select greatest(analysis_due_at, case when analysis_run_id is not null
       then analysis_started_at + interval '91 seconds' else analysis_due_at end) as due_at
     from conversations where $1 and analysis_due_at is not null and exists (select 1 from customer_consents cc where cc.phone=conversations.contact_phone and cc.status='accepted')

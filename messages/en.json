@@ -193,7 +193,9 @@
     "campaignReplyWindowClosed": "Ask a matched customer to send a new WhatsApp message to the selected sender, then try again. Replies require an open 24-hour chat window.",
     "offerExpired": "Choose a future availability date.",
     "productArchived": "This offer is archived.",
-    "templateSellerMissing": "Include the selling business name in the WhatsApp template."
+    "templateSellerMissing": "Include the selling business name in the WhatsApp template.",
+    "offerContactRequired": "Add the business WhatsApp number with its country code.",
+    "templateContactMissing": "Create a template that includes this offer’s business contact link."
   },
   "networkLabel": "THE DATAMINE NETWORK",
   "agencyCount": "{count} businesses",
@@ -290,7 +292,8 @@
     "delivery": "Delivery",
     "haircut": "Haircut",
     "color": "Hair color",
-    "restoreAutomatic": "Use automatic details again"
+    "restoreAutomatic": "Use automatic details again",
+    "offerImage": "Offer photo"
   },
   "phaseTwo": "Phase 02 · Inbox & customers",
   "inboxTitle": "Good conversations. Better business.",
@@ -584,7 +587,10 @@
     "available": "Available",
     "expired": "Expired",
     "automaticHint": "Saving makes this offer available for AI recommendations automatically.",
-    "archivedHint": "Archived offers stay unavailable until restored."
+    "archivedHint": "Archived offers stay unavailable until restored.",
+    "contactPhone": "Business WhatsApp number",
+    "imageUrl": "Photo URL (optional)",
+    "imageHint": "Public HTTPS link to a JPEG or PNG, up to 5 MB. Long offers and approved templates use a photo link."
   },
   "centralWhatsapp": {
     "title": "Datamine WhatsApp",

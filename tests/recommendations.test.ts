@@ -201,13 +201,10 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         body: templateCatalog.find((t) => t.name === sent.template.name)!.components[0].text,
       };
     }
+    if (sent.type === 'image') sent.text = { body: sent.image.caption };
     sends.push(sent);
     assert.ok(sends.at(-1)!.text.body.length <= 4096, 'WhatsApp text length limit');
-    assert.doesNotMatch(
-      sends.at(-1)!.text.body,
-      /wa.me\//,
-      'recommendation replies stay in the central chat',
-    );
+    if (sent.type === 'image') assert.ok(sent.image.caption.length <= 1024);
     if (duringSend) {
       const work = duringSend;
       duringSend = null;
@@ -599,6 +596,109 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       );
     });
     await t.test(
+      'business requests use the central sender, and central MORE follows the last business offer',
+      async () => {
+        await customer('business-context');
+        await db
+          .insert(schema.conversations)
+          .values({
+            id: 'source-business',
+            agencyId: 'supplier',
+            connectionId: 'supplier-sender',
+            contactPhone: 'business-context',
+            name: 'Customer',
+            lastInboundAt: new Date(),
+            lastMessageAt: new Date(),
+            analysisStatus: 'complete',
+          });
+        await db
+          .insert(schema.messages)
+          .values({
+            id: randomUUID(),
+            agencyId: 'supplier',
+            connectionId: 'supplier-sender',
+            contactPhone: 'business-context',
+            direction: 'inbound',
+            type: 'text',
+            body: 'Any camera offers?',
+            providerTimestamp: new Date(),
+          });
+        await db.transaction((tx) => scheduleRecommendation(tx, 'source-business'));
+        await processRecommendations(10);
+        assert.equal(count('business-context'), 1);
+        assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
+        const [delivered] = await db
+          .select()
+          .from(schema.messages)
+          .where(
+            and(
+              eq(schema.messages.contactPhone, 'business-context'),
+              eq(schema.messages.direction, 'outbound'),
+            ),
+          );
+        assert.equal(delivered.connectionId, 'origin-sender');
+        await inbound('business-context', 'MORE');
+        await processRecommendations(10);
+        assert.equal(count('business-context'), 2);
+        assert.match(sends.at(-1)!.text.body, /No more matching offers for camera/);
+        await webhook('business-context', 'STOP OFFER');
+        await processRecommendations(10);
+        const [profile] = await db
+          .select()
+          .from(schema.sharedProfiles)
+          .where(eq(schema.sharedProfiles.id, 'business-context'));
+        assert.deepEqual(profile.blockedTopics, ['camera']);
+      },
+    );
+    await t.test(
+      'a fresh business request uses approval when the central reply window is closed',
+      async () => {
+        await customer('business-template', 'accepted', true);
+        await db
+          .insert(schema.conversations)
+          .values({
+            id: 'template-business',
+            agencyId: 'supplier',
+            connectionId: 'supplier-sender',
+            contactPhone: 'business-template',
+            name: 'Customer',
+            lastInboundAt: new Date(),
+            lastMessageAt: new Date(),
+            analysisStatus: 'complete',
+          });
+        await db
+          .insert(schema.messages)
+          .values({
+            id: randomUUID(),
+            agencyId: 'supplier',
+            connectionId: 'supplier-sender',
+            contactPhone: 'business-template',
+            direction: 'inbound',
+            type: 'text',
+            body: 'Any camera offers?',
+            providerTimestamp: new Date(),
+          });
+        await db.transaction((tx) => scheduleRecommendation(tx, 'template-business'));
+        await processRecommendations(10);
+        assert.equal(count('business-template'), 0);
+        const [job] = await db
+          .select()
+          .from(schema.recommendationJobs)
+          .where(eq(schema.recommendationJobs.profileId, 'business-template'));
+        assert.equal(job.status, 'templatePending');
+        templateStatus = 'APPROVED';
+        await db
+          .update(schema.recommendationJobs)
+          .set({ dueAt: new Date(Date.now() - 1000) })
+          .where(eq(schema.recommendationJobs.id, job.id));
+        await processRecommendations(10);
+        assert.equal(count('business-template'), 1);
+        await processRecommendations(10);
+        assert.equal(count('business-template'), 1);
+        templateStatus = 'PENDING';
+      },
+    );
+    await t.test(
       'central sender must be unambiguous and verified, including after work was queued',
       async () => {
         assert.equal((await centralConnection())?.id, 'origin-sender');
@@ -672,6 +772,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
           { id: 'owner', platformRole: 'admin' },
           {
             agencyId: 'no-whatsapp',
+            contactPhone: '9647500000003',
             name: 'Ergonomic chairs',
             description: 'Adjustable office chairs.',
             price: '49.00',
@@ -721,7 +822,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         assert.equal(count('saved-catalog'), 1);
         assert.match(sends.at(-1)!.text.body, /Ergonomic chairs/);
         assert.match(sends.at(-1)!.text.body, /49.00 USD/);
-        assert.match(sends.at(-1)!.text.body, /Reply here for details/);
+        assert.match(sends.at(-1)!.text.body, /https:\/\/wa.me\/9647500000003/);
       },
     );
     await t.test(
@@ -731,6 +832,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
           { id: 'owner', platformRole: 'admin' },
           {
             agencyId: 'no-whatsapp',
+            contactPhone: '9647500000003',
             name: 'Premium chairs',
             description: 'Office chairs with arms.',
             price: '39.00',
@@ -1178,6 +1280,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
           { id: 'owner', platformRole: 'admin' },
           {
             agencyId: 'no-whatsapp',
+            contactPhone: '9647500000003',
             name: 'New camera offer',
             description: 'Camera for 800000 IQD',
             price: '800000',

@@ -1,12 +1,15 @@
 import { z } from 'zod';
 import { requestHaiku } from './anthropic';
 import { templateBodySchema } from './meta-templates';
+import { sellerContact } from './offer-media';
 
 export async function draftOfferTemplate(input: {
   title: string;
   offerText: string;
   locale: string;
   businessName: string;
+  contactPhone?: string;
+  imageUrl?: string;
 }) {
   // Use a plain schema for the provider, then enforce text-only rules locally.
   const { result } = await requestHaiku(
@@ -15,5 +18,20 @@ export async function draftOfferTemplate(input: {
     input,
     1200,
   );
-  return { body: templateBodySchema.parse(result.body) };
+  return { body: templateBodySchema.parse(withOfferDetails(result.body, input)) };
+}
+
+export function withOfferDetails(
+  body: string,
+  input: { contactPhone?: string; imageUrl?: string; locale: string },
+) {
+  return [
+    body,
+    input.contactPhone && !body.includes(`https://wa.me/${input.contactPhone}`)
+      ? sellerContact(input.contactPhone, input.locale)
+      : '',
+    input.imageUrl && !body.includes(input.imageUrl) ? input.imageUrl : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 }

@@ -24,6 +24,7 @@ export type Conversation = CustomerFields & {
 export type InboxMessage = {
   id: string;
   body: string | null;
+  imageUrl?: string | null;
   type: string;
   direction: string;
   deliveryStatus: string;

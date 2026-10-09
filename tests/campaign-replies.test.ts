@@ -454,6 +454,7 @@ test('real campaign replies respect sender windows, consent, and durable send cl
           .where(eq(schema.customerConsents.phone, 'open'));
         const manager = { id: 'owner', platformRole: 'admin' };
         const product = await createProduct(manager, {
+          contactPhone: '9647500000002',
           agencyId: 'business',
           name: 'Phone offer',
           description: 'Available phone',

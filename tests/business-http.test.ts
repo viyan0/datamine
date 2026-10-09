@@ -201,6 +201,7 @@ test('HTTP business setup and campaign permissions use real authenticated sessio
       agencyId,
       title: 'Flowers',
       offerText: 'Fresh rose bouquet for 20 USD.',
+      contactPhone: '9647500000002',
       locale: 'en',
     });
     const ownCreated = await call('/api/campaigns', owner, offer(agencyIds[0]));
@@ -303,6 +304,8 @@ test('HTTP business setup and campaign permissions use real authenticated sessio
         const productInput = {
           agencyId: agencyIds[0],
           name: 'Rose bouquet',
+          contactPhone: '9647500000002',
+          imageUrl: 'https://example.com/roses.jpg',
           description: 'Twelve fresh roses',
           price: '25000',
         };

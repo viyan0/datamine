@@ -3,6 +3,8 @@ export type ProductView = {
   agencyId: string;
   name: string;
   description: string;
+  contactPhone: string;
+  imageUrl: string;
   price: string;
   currency: string;
   locale: 'en' | 'ar' | 'ckb';

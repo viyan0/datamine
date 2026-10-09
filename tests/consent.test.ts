@@ -10,6 +10,7 @@ import { ingestWebhook } from '../src/lib/webhook';
 import { consentChoice, processConsentReplies } from '../src/lib/consent';
 import { processPendingAnalysis } from '../src/lib/analysis';
 import { matchCampaign } from '../src/lib/campaigns';
+import { processRecommendations } from '../src/lib/recommendations';
 
 test('one WhatsApp consent connects AI interests to existing offers; decline purges and blocks collection', async () => {
   const local = await PGlite.create();
@@ -29,7 +30,14 @@ test('one WhatsApp consent connects AI interests to existing offers; decline pur
   const db = getPool(),
     originalFetch = globalThis.fetch,
     secret = 'test-secret';
-  const sent: { text: { body: string }; biz_opaque_callback_data: string }[] = [];
+  const sent: {
+    type: string;
+    to: string;
+    image?: { link: string; caption: string };
+    text: { body: string };
+    biz_opaque_callback_data: string;
+  }[] = [];
+  const senders: string[] = [];
   let aiCalls = 0;
   let duringAnalysis: (() => Promise<void>) | undefined;
   const record = async (table: string, phone = '9647000000001') =>
@@ -84,13 +92,26 @@ test('one WhatsApp consent connects AI interests to existing offers; decline pur
       body = JSON.parse(String(init?.body));
     if (url.startsWith('https://graph.facebook.com/') && url.endsWith('/messages')) {
       sent.push(body);
+      senders.push(url);
       return Response.json({ messages: [{ id: `wamid.mock.${sent.length}` }] });
     }
     assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
     aiCalls++;
     const source = JSON.parse(body.messages[1].content);
     let result;
-    if (source.customers) {
+    if (source.classification === 'offerRequest')
+      result = { offerRequest: /offers/i.test(source.latestMessage) };
+    else if (source.latestMessageId) {
+      result = {
+        action: 'request',
+        topic: 'flowers',
+        offerId: source.offers[0]?.id || null,
+        reason: 'Matches the flower request.',
+        evidence: source.messages
+          .filter((m: { body: string }) => /flowers/.test(m.body))
+          .map((m: { id: string; body: string }) => ({ messageId: m.id, quote: m.body })),
+      };
+    } else if (source.customers) {
       assert.ok(source.customers.every((c: object) => !('phone' in c) && !('messages' in c)));
       result = {
         summary: 'Flowers offer',
@@ -131,12 +152,70 @@ test('one WhatsApp consent connects AI interests to existing offers; decline pur
       ['d', 'b', '12346'],
     ])
       await db.query(
-        "insert into whatsapp_connections(id,agency_id,label,phone_number_id,waba_id,display_phone,access_token_encrypted,app_secret_encrypted,campaign_sender,verified_at) values ($1,$2,'Test',$3,'67890','test',$4,$5,$1='c',now())",
+        "insert into whatsapp_connections(id,agency_id,label,phone_number_id,waba_id,display_phone,access_token_encrypted,app_secret_encrypted,campaign_sender,verified_at) values ($1,$2,'Test',$3,'67890','+15550000001',$4,$5,$1='c',now())",
         [id, agency, number, encrypt('mock', `${id}:token`), encrypt(secret, `${id}:secret`)],
       );
     await db.query(
       "insert into campaigns(id,agency_id,created_by,title,offer_text,locale,status) values ('offer','a','u','Flowers','Flowers offer','en','ready')",
     );
+    // A real signed webhook travels through business inbox -> invitation -> central
+    // consent -> AI -> central photo offer. External AI/Meta responses are isolated mocks.
+    const handoff = '9647000000004';
+    await db.query(
+      "update campaigns set network_enabled=true, network_expires_at=now()+interval '7 days', contact_phone='15550000001',image_url='https://example.com/flowers.jpg' where id='offer'",
+    );
+    const first = randomUUID();
+    await inbound('Do you have flowers offers?', handoff, first, '12346');
+    await inbound('Do you have flowers offers?', handoff, first, '12346');
+    await analyse();
+    assert.equal(aiCalls, 0);
+    await processConsentReplies();
+    await processConsentReplies();
+    assert.equal(sent.length, 1, 'one invitation from the business');
+    assert.match(senders[0], /12346\/messages$/);
+    assert.match(sent[0].text.body, /https:\/\/wa.me\/15550000001/);
+    assert.equal(await record('customer_consents', handoff), undefined);
+    await inbound('YES', handoff, randomUUID(), '12346');
+    assert.equal(
+      await record('customer_consents', handoff),
+      undefined,
+      'business cannot grant consent',
+    );
+    await inbound('I like flowers', handoff);
+    await processConsentReplies();
+    assert.match(senders[1], /12345\/messages$/);
+    assert.match(sent[1].text.body, /Reply YES/);
+    await inbound('YES', handoff);
+    await processConsentReplies();
+    await inbound('Please show me flowers offers', handoff, randomUUID(), '12346');
+    await analyse();
+    await processRecommendations(10);
+    const photo = sent.find((m) => m.type === 'image');
+    assert.ok(photo, 'accepted business inquiry receives a photo offer');
+    assert.equal(photo.to, handoff);
+    assert.equal(photo.image?.link, 'https://example.com/flowers.jpg');
+    assert.match(photo.image!.caption, /https:\/\/wa.me\/15550000001/);
+    assert.match(senders[sent.indexOf(photo)], /12345\/messages$/);
+    assert.equal(
+      (await db.query("select count(*)::int n from profile_events where action='enrolled'")).rows[0]
+        .n,
+      1,
+      'only one acceptance',
+    );
+    await inbound('STOP ALL', handoff);
+    await processConsentReplies();
+    assert.equal(await record('conversations', handoff), undefined);
+    assert.equal(
+      (await db.query('select count(*)::int n from messages where contact_phone=$1', [handoff]))
+        .rows[0].n,
+      0,
+    );
+    await db.query(
+      "update campaigns set network_enabled=false,contact_phone='',image_url='' where id='offer'",
+    );
+    sent.length = 0;
+    senders.length = 0;
+    aiCalls = 0;
     const id = randomUUID();
     await inbound('I like flowers', undefined, id);
     await inbound('I like flowers', undefined, id);
@@ -171,14 +250,17 @@ test('one WhatsApp consent connects AI interests to existing offers; decline pur
     assert.equal(
       (await db.query("select count(*)::int n from conversations where connection_id='d'")).rows[0]
         .n,
-      0,
-      'noncentral inbound messages are not collected',
+      1,
+      'accepted customers can use business inboxes without another consent',
     );
     await inbound('YES', '9647000000003', randomUUID(), '12346');
     assert.equal(
       await record('customer_consents', '9647000000003'),
       undefined,
       'only the central number can accept consent',
+    );
+    await db.query(
+      "delete from consent_invitations where phone='9647000000003'; delete from messages where contact_phone='9647000000003'; delete from conversations where contact_phone='9647000000003'",
     );
     await analyse();
     assert.equal(
@@ -200,8 +282,11 @@ test('one WhatsApp consent connects AI interests to existing offers; decline pur
     await inbound('More messages after declining');
     assert.equal((await db.query('select count(*)::int n from messages')).rows[0].n, 0);
     assert.equal(
-      (await db.query("select count(*)::int n from provider_events where kind='message'")).rows[0]
-        .n,
+      (
+        await db.query(
+          "select count(*)::int n from provider_events where kind='message' and payload->>'from'='9647000000001'",
+        )
+      ).rows[0].n,
       0,
     );
     assert.equal((await db.query('select count(*)::int n from campaign_recipients')).rows[0].n, 0);

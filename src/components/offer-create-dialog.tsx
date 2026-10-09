@@ -103,6 +103,9 @@ export function OfferCreateDialog({
         ? productOfferText(product, language)
         : String(form.get('offerText') || ''),
       locale: language,
+      contactPhone:
+        product?.contactPhone || String(form.get('contactPhone') || '').replace(/[\s()+-]/g, ''),
+      imageUrl: product?.imageUrl || String(form.get('imageUrl') || ''),
       ...(product ? { productId: product.id } : {}),
       ...publicationInput(form),
     };
@@ -209,6 +212,34 @@ export function OfferCreateDialog({
             />
           )}
         </label>
+        {!product && (
+          <>
+            <label>
+              {p('contactPhone')}
+              <input
+                name="contactPhone"
+                type="tel"
+                required
+                maxLength={30}
+                disabled={busy}
+                dir="ltr"
+                placeholder="+964…"
+              />
+            </label>
+            <label>
+              {p('imageUrl')}
+              <input
+                name="imageUrl"
+                type="url"
+                maxLength={2000}
+                disabled={busy}
+                dir="ltr"
+                placeholder="https://…"
+              />
+              <small className="form-hint">{p('imageHint')}</small>
+            </label>
+          </>
+        )}
         {!demo && !product && (
           <>
             <NetworkFields disabled={busy} />

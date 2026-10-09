@@ -1,5 +1,15 @@
 # Datamine delivery
 
+## Contextual offer matching and permanent WhatsApp credential, 2026-10-09
+
+Application commit `bb82cd2` is pushed to GitHub and deployed to https://datamine-lilac.vercel.app as `dpl_24i9gzZX3uemYoMVYVtgvEejBefS`. The production build and TypeScript compilation passed.
+
+The central WhatsApp connection now uses the existing Meta system user's encrypted token. Meta's debugger confirmed `SYSTEM_USER`, the expected app, `expires_at: 0` and `data_access_expires_at: 0`; the phone lookup succeeded. The token has no scheduled expiry, but can still be revoked. The previously rejected laptop recommendation was recovered only after verifying it had no provider message ID or callback, and its replacement received a Read receipt. The failed attempt remains in message history.
+
+The camera customer's messages and offer history were separate from the laptop customer's records. A generic follow-up initially returned no match; a first recovery then selected that same customer's older laptop interest. The correction supplies the current AI-analyzed subject and requires its source message in the recommendation's evidence, so older interests cannot independently justify a newer follow-up. First-offer requests are distinguished from MORE, topics remain dynamic, and no-match decisions retain the AI reason.
+
+Verification: 23 recommendation checks passed, including separate phone histories, contextual requests, changed topics, one offer then MORE, consent, stops, expiry and duplicate protection. ESLint, TypeScript and diff checks passed. Two read-only replays through real Haiku selected the camera offer with exact camera/follow-up quotes, both before and after accounting for the intervening laptop delivery. These replays did not send messages. The final live automatic-flow check is awaiting a fresh message from the camera test customer; the already-delivered laptop request was not replayed or rewritten.
+
 ## Automatic offer catalog and central WhatsApp, 2026-10-09
 
 Application commit `a994335` is pushed to GitHub and deployed at https://datamine-lilac.vercel.app as `dpl_4JegFykMZkT4npuN43xyUwWw41b2`. The Vercel production build and TypeScript compilation succeeded. Migrations 0010 and 0011 are applied locally and in production.

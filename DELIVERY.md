@@ -1,5 +1,13 @@
 # Datamine delivery
 
+## Switching offer topics across WhatsApp inboxes, 2026-10-10
+
+A new product request after an earlier offer now starts its own recommendation without requiring MORE. Haiku decides whether the request is a different topic; repeating the already answered topic still waits for an explicit request for more. Categories remain dynamic.
+
+The central matcher now includes the same consenting customer's recent business-chat requests and uses the newest quoted subject, so MORE after a business camera request cannot silently inherit an older laptop context. Business CRM access stays scoped to that business. Saved requests for future offers keep their original topic and message cutoff.
+
+Verification: 82 automated tests passed, including the cross-inbox topic switch, stale central analysis, repeat prevention, waiting inventory, stops, consent and tenant boundaries. A read-only replay of the actual camera/MORE messages through live Haiku selected the camera kit offer in both cases; repeating the old laptop interest was not classified as a new topic. The replay sent no WhatsApp messages and changed no customer data.
+
 ## Separate admin and business dashboards, 2026-10-10
 
 The platform administrator has a dashboard for businesses, active offers, enrolled customers and automatic offer deliveries. Datamine's central WhatsApp workspace is flagged as a platform account and excluded from business totals and business selectors. Creating a business no longer makes the administrator its owner. Migration `0015_platform_workspace` also removes old administrator memberships without changing business users, conversations or sender connections.

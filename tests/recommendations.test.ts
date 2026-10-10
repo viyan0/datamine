@@ -34,12 +34,15 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
   process.env.CREDENTIAL_ENCRYPTION_KEY = randomBytes(32).toString('hex');
   process.env.OPENROUTER_API_KEY = 'isolated-test-only';
   process.env.META_GRAPH_VERSION = 'v26.0';
+  // PGlite has one backend; concurrent socket portals otherwise interfere with each other.
+  getPool().options.max = 1;
   const db = getDb();
   const originalFetch = globalThis.fetch;
   const sends: { to: string; text: { body: string } }[] = [];
   const rankingInputs: {
     latestMessageId: string;
     previousTopic: string | null;
+    currentInterest: { value: string; messageId: string; quote: string } | null;
     waitingTopics: string[];
     messages: { id: string; body: string }[];
     offers: { id: string; text: string }[];
@@ -66,6 +69,9 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
     if (String(url) === 'https://openrouter.ai/api/v1/chat/completions') {
       const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
       if (payload.classification === 'offerRequest') {
+        const named = payload.latestMessage
+          .toLowerCase()
+          .match(/phones|camera|bikes|chairs|flowers/)?.[0];
         return Response.json({
           model: 'anthropic/claude-haiku-5.5',
           choices: [
@@ -75,6 +81,11 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
                 content: JSON.stringify({
                   offerRequest:
                     /offers?/i.test(payload.latestMessage) && !/stop/i.test(payload.latestMessage),
+                  newTopicRequest:
+                    !!named &&
+                    payload.offeredTopics?.length > 0 &&
+                    !payload.offeredTopics.includes(named) &&
+                    /want|about|available|do you have/i.test(payload.latestMessage),
                 }),
               },
             },
@@ -149,6 +160,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       }
       const input = JSON.parse(JSON.parse(String(init?.body)).messages[1].content) as {
         mode: string;
+        offerRequested: boolean;
         requestedTopic?: string;
         latestMessageId: string;
         previousTopic: string | null;
@@ -167,7 +179,11 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       const contextualFollowup = latest.body === 'any offers for me?';
       const stopTopic = /stop phones offers/i.test(latest.body);
       const requested =
-        !stopTopic && (input.mode === 'more' || /offers?/i.test(latest.body) || !!input.followUp);
+        !stopTopic &&
+        (input.offerRequested ||
+          input.mode === 'more' ||
+          /offers?/i.test(latest.body) ||
+          !!input.followUp);
       const unnamed = !/camera|bikes|chairs|flowers|phones/i.test(latest.body);
       const topicRequest =
         input.requestedTopic ||
@@ -622,7 +638,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
       },
     );
     await t.test(
-      'MORE after a new topic requests that topic, not the last sent offer topic',
+      'a new product request gets its own offer without MORE, then MORE stays on that product',
       async () => {
         await customer('switch-before-more');
         await inbound('switch-before-more', 'Any phones offers?');
@@ -631,12 +647,109 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         const first = sends.at(-1)!.text.body;
         await inbound('switch-before-more', 'I want a camera');
         await processRecommendations(5);
-        assert.equal(count('switch-before-more'), 1);
+        assert.equal(count('switch-before-more'), 2);
+        assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
         await inbound('switch-before-more', 'more offers');
         await processRecommendations(5);
-        assert.equal(count('switch-before-more'), 2);
+        assert.equal(count('switch-before-more'), 3);
         assert.match(first, /New phones/);
+        assert.match(sends.at(-1)!.text.body, /No more matching offers for camera/);
+      },
+    );
+    await t.test(
+      'a new product request in a business chat sends one central offer in immediate mode',
+      async () => {
+        await customer('business-topic-switch');
+        await inbound('business-topic-switch', 'Any phones offers?');
+        await processRecommendations(10);
+        assert.equal(count('business-topic-switch'), 1);
+        await retail('business-topic-switch', 'inbound', 'Hello I want a camera');
+        await processRecommendations(10);
+        assert.equal(count('business-topic-switch'), 2);
         assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
+        await retail('business-topic-switch', 'inbound', 'I still want a camera');
+        await processRecommendations(10);
+        assert.equal(
+          count('business-topic-switch'),
+          2,
+          'repeating an answered topic is not permission for another offer',
+        );
+        await processRecommendations(10);
+        assert.equal(count('business-topic-switch'), 2, 'the new request sends at most once');
+      },
+    );
+    await t.test(
+      'central MORE uses the newer business request even while that business is waiting to reply',
+      async () => {
+        await customer('cross-chat-more');
+        const phones = await inbound('cross-chat-more', 'Any phones offers?');
+        await processRecommendations(10);
+        assert.equal(count('cross-chat-more'), 1);
+        await setBusinessChatOfferMode('businessFirst', 'owner');
+        try {
+          const camera = await retail('cross-chat-more', 'inbound', 'Hello I want a camera');
+          for (const [conversationId, subject] of [
+            [
+              'cross-chat-more',
+              { value: 'phones', messageId: phones.messageId, quote: 'Any phones offers?' },
+            ],
+            [
+              'cross-chat-more-retail',
+              { value: 'camera', messageId: camera, quote: 'Hello I want a camera' },
+            ],
+          ] as const) {
+            await db
+              .update(schema.conversations)
+              .set({
+                analysis: {
+                  result: {
+                    language: 'en',
+                    services: [subject.value],
+                    intent: 'Purchase',
+                    inquiryStatus: 'new',
+                    summary: subject.quote,
+                    nextStep: 'Show offers.',
+                    reviewNote: null,
+                    facts: [],
+                    stopOffers: null,
+                    subject,
+                  },
+                  model: 'test',
+                  version: 5,
+                  locale: 'en',
+                  createdAt: new Date().toISOString(),
+                  sourceHash: 'test',
+                  sourceMessageIds: [subject.messageId],
+                  inputTokens: 0,
+                  outputTokens: 0,
+                  latencyMs: 0,
+                },
+              })
+              .where(eq(schema.conversations.id, conversationId));
+          }
+          await processRecommendations(10);
+          assert.equal(count('cross-chat-more'), 1);
+          const held = await jobFor(camera);
+          assert.equal(held.mode, 'followUp');
+          const more = await inbound('cross-chat-more', 'MORE');
+          await processRecommendations(10);
+          assert.equal(count('cross-chat-more'), 2);
+          assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
+          assert.doesNotMatch(sends.at(-1)!.text.body, /New phones/);
+          const input = rankingInputs.find((item) => item.latestMessageId === more.messageId)!;
+          assert.equal(
+            input.currentInterest?.messageId,
+            camera,
+            'the newer business subject replaces the stale central subject',
+          );
+          assert.ok(input.messages.some((message) => message.id === camera));
+          assert.deepEqual(
+            input.messages.map((message) => message.body),
+            ['Any phones offers?', 'Hello I want a camera', 'MORE'],
+          );
+        } finally {
+          await setBusinessChatOfferMode('immediate', 'owner');
+        }
       },
     );
     await t.test(
@@ -1386,6 +1499,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         );
         await inbound('waiting-camera', 'I want bikes');
         await processRecommendations(50);
+        assert.equal(count('waiting-camera'), 3, 'the different product gets its own offer');
         const product = await createProduct(
           { id: 'owner', platformRole: 'admin' },
           {
@@ -1401,7 +1515,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         await Promise.all([processRecommendations(50), processRecommendations(50)]);
         assert.equal(
           count('waiting-camera'),
-          3,
+          4,
           'one newly available camera, despite later bike inquiry',
         );
         assert.match(sends.filter((s) => s.to === 'waiting-camera').at(-1)!.text.body, /800000/);
@@ -1409,7 +1523,7 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
           price: '790000',
         });
         await processRecommendations(50);
-        assert.equal(count('waiting-camera'), 3, 'saving more offers cannot grant another send');
+        assert.equal(count('waiting-camera'), 4, 'saving more offers cannot grant another send');
         const [done] = await db
           .select()
           .from(schema.recommendationJobs)

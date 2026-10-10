@@ -83,9 +83,10 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
                     /offers?/i.test(payload.latestMessage) && !/stop/i.test(payload.latestMessage),
                   newTopicRequest:
                     !!named &&
-                    payload.offeredTopics?.length > 0 &&
-                    !payload.offeredTopics.includes(named) &&
-                    /want|about|available|do you have/i.test(payload.latestMessage),
+                    !!payload.previousTopic &&
+                    payload.previousTopic !== named &&
+                    /want|need|about|available|do you have/i.test(payload.latestMessage) &&
+                    !/stop/i.test(payload.latestMessage),
                 }),
               },
             },
@@ -678,6 +679,81 @@ test('automatic recommendations respect consent, one offer, more, topic stops an
         assert.equal(count('business-topic-switch'), 2, 'the new request sends at most once');
       },
     );
+    await t.test(
+      'returning to a previous product requests an unseen offer and keeps exhausted context',
+      async () => {
+        const customerId = 'return-to-topic';
+        await customer(customerId);
+        const firstPhoneRequest = await inbound(customerId, 'Any phones offers?');
+        await processRecommendations(10);
+        assert.equal(count(customerId), 1);
+        const firstPhoneJob = await jobFor(firstPhoneRequest.messageId);
+
+        await retail(customerId, 'inbound', 'I need a camera');
+        await processRecommendations(10);
+        assert.equal(count(customerId), 2);
+        assert.match(sends.at(-1)!.text.body, /Camera for 1000000 IQD/);
+
+        const returningRequest = await retail(customerId, 'inbound', 'I need some phones');
+        await processRecommendations(10);
+        assert.equal(count(customerId), 3, 'returning to phones does not require MORE');
+        const nextPhoneOffer = sends.at(-1)!.text.body;
+        assert.match(nextPhoneOffer, /New phones/);
+        const returningJob = await jobFor(returningRequest);
+        assert.notEqual(
+          returningJob.campaignId,
+          firstPhoneJob.campaignId,
+          'the sent offer is excluded',
+        );
+
+        await retail(customerId, 'inbound', 'I need smartphones');
+        await processRecommendations(10);
+        assert.equal(count(customerId), 3, 'a variation of the current topic stays quiet');
+
+        await retail(customerId, 'inbound', 'I need a camera');
+        await processRecommendations(10);
+        assert.equal(count(customerId), 4, 'returning to an exhausted topic gets one reply');
+        assert.match(sends.at(-1)!.text.body, /No more matching offers for camera/);
+
+        await retail(customerId, 'inbound', 'I still need a camera');
+        await processRecommendations(10);
+        assert.equal(count(customerId), 4, 'an acknowledged exhausted topic stays quiet');
+
+        const more = await inbound(customerId, 'MORE');
+        await processRecommendations(10);
+        assert.equal(count(customerId), 5);
+        assert.match(sends.at(-1)!.text.body, /No more matching offers for camera/);
+        const input = rankingInputs.find((item) => item.latestMessageId === more.messageId)!;
+        assert.equal(
+          input.previousTopic,
+          'camera',
+          'the no-offer reply is the latest handled topic',
+        );
+        await processRecommendations(10);
+        assert.equal(count(customerId), 5, 'reprocessing does not resend a reply or offer');
+      },
+    );
+    await t.test('returning to a previous product does not remove its topic stop', async () => {
+      const customerId = 'return-to-stopped-topic';
+      await customer(customerId);
+      await inbound(customerId, 'Any phones offers?');
+      await processRecommendations(10);
+      await retail(customerId, 'inbound', 'I need a camera');
+      await processRecommendations(10);
+      assert.equal(count(customerId), 2);
+
+      await inbound(customerId, 'Please stop phones offers');
+      await processRecommendations(10);
+      assert.equal(count(customerId), 3, 'only the stop acknowledgement is added');
+      await retail(customerId, 'inbound', 'I need some phones');
+      await processRecommendations(10);
+      assert.equal(count(customerId), 3, 'switching back cannot re-enable a blocked topic');
+      const [profile] = await db
+        .select()
+        .from(schema.sharedProfiles)
+        .where(eq(schema.sharedProfiles.id, customerId));
+      assert.deepEqual(profile.blockedTopics, ['phones']);
+    });
     await t.test(
       'central MORE uses the newer business request even while that business is waiting to reply',
       async () => {

@@ -1,5 +1,13 @@
 # Datamine delivery
 
+## Returning to an earlier offer topic, 2026-10-10
+
+The topic-switch classifier now compares a request with the most recently handled topic, instead of excluding every topic previously offered. Laptop → camera → laptop therefore requests one unseen laptop offer without MORE. Repeating the current product (including synonyms) stays quiet; explicit MORE still requests another option, and topic stops remain in force.
+
+The last handled topic includes an acknowledged empty result. Requests are ordered by their original message timestamps, so retrying an older waiting request does not overwrite the newer conversation context. Source checks include this context before delivery. Existing offer-ID deduplication and consent checks remain intact.
+
+Validation: 84 automated tests, targeted lint and the production build passed. A read-only live Haiku replay classified the actual “I need some laptops” message as a switch back from camera and selected the unseen Study laptop demo offer. Separate live checks covered same-topic repetition, a synonym, switching to camera and a topic stop.
+
 ## Switching offer topics across WhatsApp inboxes, 2026-10-10
 
 A new product request after an earlier offer now starts its own recommendation without requiring MORE. Haiku decides whether the request is a different topic; repeating the already answered topic still waits for an explicit request for more. Categories remain dynamic.

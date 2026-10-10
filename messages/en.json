@@ -613,5 +613,21 @@
   },
   "catalogTitle": "Offers",
   "manage": "Manage",
-  "offersSub": "Your offer catalog. Active offers are recommended to matching customers automatically."
+  "offersSub": "Your offer catalog. Active offers are recommended to matching customers automatically.",
+  "searchPages": "Jump to a page…",
+  "accountMenu": "Account menu",
+  "createNew": "Create new",
+  "adminDashboard": "Admin dashboard",
+  "businessDashboard": "Business dashboard",
+  "adminOverviewSub": "Businesses, offers and customer enrollment.",
+  "businessOverviewSub": "Your customers, conversations and offers.",
+  "platformMetrics": {
+    "activeOffers": "Active offers",
+    "enrolledCustomers": "Enrolled customers",
+    "sentOffers": "Offers sent",
+    "offersByBusiness": "Offers by business",
+    "centralNumber": "Central WhatsApp",
+    "businesses": "Businesses",
+    "manageBusinesses": "Manage businesses"
+  }
 }

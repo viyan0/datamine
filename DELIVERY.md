@@ -1,5 +1,17 @@
 # Datamine delivery
 
+## Separate admin and business dashboards, 2026-10-10
+
+The platform administrator has a dashboard for businesses, active offers, enrolled customers and automatic offer deliveries. Datamine's central WhatsApp workspace is flagged as a platform account and excluded from business totals and business selectors. Creating a business no longer makes the administrator its owner. Migration `0015_platform_workspace` also removes old administrator memberships without changing business users, conversations or sender connections.
+
+The administrator has no inbox navigation or message viewer. Direct inbox pages redirect to the admin dashboard, and all conversation, message, analysis, reply and enrollment endpoints reject platform-admin sessions. Business users retain their own dashboard and inbox; membership checks isolate their data. The public sample dashboard remains a business CRM preview. English, Arabic and Sorani labels are included.
+
+Both local and live demo databases now have five businesses and eleven active offers with photos: Demo Electronics (3), Demo Tech Market (2), Demo Camera House (2), Demo Bloom Flowers (2), and Demo Home Living (2). Offers expire on October 17 at 23:59 Baghdad time. These are illustrative demonstration listings. Only Demo Electronics has the separate business WhatsApp test inbox; the other businesses populate the offer catalog. Its owner test account is `business@datamine.demo`; credentials are kept outside Git.
+
+For the presentation, sign in with the existing admin account to see all five businesses, then use the business account to inspect only Demo Electronics and its three offers. Message the business test number to start the customer flow, approve once in Datamine's central chat, then request laptop, camera or flower offers. MORE asks for the next relevant offer; STOP OFFER stops that topic. Existing customer consent and real test messages were preserved for this release.
+
+Validation: all 80 automated checks pass, including real HTTP-session tests for admin inbox denial, unauthenticated denial, business isolation and offer permissions. Provider calls in these tests are mocked. The release also includes the pending UI refresh and configurable business offer follow-up behavior from the previous release branch.
+
 ## Live image offer verified, 2026-10-09
 
 At the user's explicit request, one **Dell image delivery test** campaign was sent only to the controlled customer ending 8010 through the existing `deliverRecipient` application path. It copied the saved Dell offer price (12,000 IQD) and seller contact, used a sample public Dell laptop PNG, and labelled the photo as illustrative because the actual offer model is unspecified. The original catalog offer was not assigned an invented product photo, and the test campaign is not published for automatic recommendations.

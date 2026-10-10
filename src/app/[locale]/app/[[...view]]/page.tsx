@@ -6,8 +6,10 @@ import { Dashboard } from '@/components/dashboard';
 export const dynamic = 'force-dynamic';
 export default async function Workspace({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string; view?: string[] }>;
+  searchParams: Promise<{ create?: string | string[] }>;
 }) {
   const { locale, view } = await params;
   const section = view?.[0] || 'overview';
@@ -29,7 +31,20 @@ export default async function Workspace({
     notFound();
   const session = await getAuth().api.getSession({ headers: await headers() });
   if (!session) redirect(`/${locale}`);
+  if (
+    (session.user.platformRole === 'admin' && section === 'inbox') ||
+    (session.user.platformRole !== 'admin' && section === 'agencies') ||
+    section === 'team'
+  )
+    redirect(`/${locale}/app`);
+  const { create } = await searchParams;
+  const request = typeof create === 'string' ? create : undefined;
   return (
-    <Dashboard data={await loadWorkspace(session.user, section === 'overview')} section={section} />
+    <Dashboard
+      key={`${section}:${request ?? ''}`}
+      data={await loadWorkspace(session.user, section === 'overview')}
+      section={section}
+      create={request}
+    />
   );
 }

@@ -1,0 +1,127 @@
+/* Offers catalog page. Every rule is scoped under .content-offers. */
+.content-offers .product-filters,
+.content-offers .product-count,
+.content-offers .product-count label,
+.content-offers .product-actions,
+.content-offers .product-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.content-offers .product-toolbar {
+  flex-wrap: wrap;
+}
+.content-offers .product-filters {
+  flex-wrap: wrap;
+}
+.content-offers .product-filters select {
+  width: auto;
+  min-width: 180px;
+}
+.content-offers .product-count {
+  justify-content: space-between;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.content-offers .product-count label {
+  flex-direction: row;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.content-offers .product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr));
+  gap: 16px;
+}
+.content-offers .product-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 20px;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.content-offers .product-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.content-offers .product-card .offer-photo {
+  max-width: none;
+  height: 168px;
+  margin: -4px 0 16px;
+}
+.content-offers .product-card-heading {
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 14px;
+}
+.content-offers .product-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.content-offers .product-card > small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.content-offers .product-card h2 {
+  margin: 2px 0 4px;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.content-offers .product-card > a {
+  font-size: 13px;
+  color: var(--accent-strong);
+}
+.content-offers .product-card > a:hover {
+  text-decoration: underline;
+}
+.content-offers .product-description {
+  display: -webkit-box;
+  margin: 10px 0 16px;
+  overflow: hidden;
+  font-size: 14px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.content-offers .product-price {
+  margin-top: auto;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.content-offers .product-availability {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.content-offers .product-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.content-offers .product-actions .icon-button {
+  margin-inline-start: auto;
+}
+
+@media (max-width: 640px) {
+  .content-offers .product-filters > * {
+    flex: 1;
+  }
+}

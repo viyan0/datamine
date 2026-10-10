@@ -106,6 +106,13 @@
       "when": 1791552000000,
       "tag": "0014_offer_follow_ups",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791593000000,
+      "tag": "0015_platform_workspace",
+      "breakpoints": true
     }
   ]
 }

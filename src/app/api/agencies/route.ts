@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { getDb } from '@/db';
-import { agencies, memberships, auditEvents } from '@/db/schema';
+import { agencies, auditEvents } from '@/db/schema';
 import { requirePlatformAdmin } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { businessSettingsSchema } from '@/lib/business';
@@ -21,9 +21,6 @@ export async function POST(request: Request) {
       id = randomUUID();
     await getDb().transaction(async (tx) => {
       await tx.insert(agencies).values({ ...input, id });
-      await tx
-        .insert(memberships)
-        .values({ id: randomUUID(), agencyId: id, userId: session.user.id, role: 'owner' });
       await tx.insert(auditEvents).values({
         id: randomUUID(),
         agencyId: id,

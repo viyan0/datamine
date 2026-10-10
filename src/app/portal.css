@@ -1,11 +1,11 @@
-/* Customer opt-in portal */
+/* Customer opt-in portal (rendered outside the workspace shell). */
 .customer-portal {
   min-height: 100svh;
   padding: 24px 24px 48px;
   background:
     radial-gradient(80% 50% at 50% 0%, rgb(211 43 101 / 0.07), transparent 70%), var(--bg);
 }
-.portal-header {
+.customer-portal .portal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -13,7 +13,7 @@
   max-width: 1080px;
   margin: 0 auto 48px;
 }
-.portal-card {
+.customer-portal .portal-card {
   max-width: 540px;
   margin: 0 auto;
   padding: 36px 40px;
@@ -22,7 +22,7 @@
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
-.portal-icon {
+.customer-portal .portal-icon {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -34,23 +34,23 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
-.portal-card h1 {
+.customer-portal .portal-card h1 {
   margin: 8px 0 6px;
   font-size: 26px;
 }
-.portal-intro {
+.customer-portal .portal-intro {
   margin-bottom: 24px;
   color: var(--muted);
 }
-.portal-card .notice {
+.customer-portal .portal-card .notice {
   margin: 16px 0;
 }
-.portal-card > .btn,
-.preferences-form .btn,
-.verification-form .btn {
+.customer-portal .portal-card > .btn,
+.customer-portal .preferences-form .btn,
+.customer-portal .verification-form .btn {
   align-self: flex-start;
 }
-.verify-summary {
+.customer-portal .verify-summary {
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -61,19 +61,19 @@
   background: var(--surface-2);
   color: var(--ink-2);
 }
-.verify-summary svg {
+.customer-portal .verify-summary svg {
   margin-top: 2px;
   color: var(--accent);
 }
-.verification-form {
+.customer-portal .verification-form {
   margin-top: 24px;
 }
-.portal-footnote {
+.customer-portal .portal-footnote {
   margin-top: 20px;
   font-size: 13px;
   color: var(--muted);
 }
-.portal-footer {
+.customer-portal .portal-footer {
   max-width: 480px;
   margin: 0 auto;
   padding: 24px 8px 0;
@@ -81,17 +81,17 @@
   color: var(--muted);
   text-align: center;
 }
-.portal-back {
+.customer-portal .portal-back {
   display: inline-block;
   margin-top: 24px;
   font-size: 13px;
   font-weight: 500;
   color: var(--accent-strong);
 }
-.portal-back:hover {
+.customer-portal .portal-back:hover {
   text-decoration: underline;
 }
-.verified-phone {
+.customer-portal .verified-phone {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -103,32 +103,32 @@
   background: var(--surface-2);
   font-size: 14px;
 }
-.verified-phone span,
-.saved-message {
+.customer-portal .verified-phone span,
+.customer-portal .saved-message {
   display: flex;
   align-items: center;
   gap: 6px;
   color: var(--success);
   font-weight: 500;
 }
-.preferences-form fieldset {
+.customer-portal .preferences-form fieldset {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
-.preferences-form .form-hint {
+.customer-portal .preferences-form .form-hint {
   margin-top: -8px;
 }
-.preferences-form fieldset > .btn + .btn {
+.customer-portal .preferences-form fieldset > .btn + .btn {
   margin-top: -8px;
 }
-.consent-box {
+.customer-portal .consent-box {
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface-2);
 }
-.consent-box label {
+.customer-portal .consent-box label {
   flex-direction: row;
   align-items: flex-start;
   gap: 12px;
@@ -137,21 +137,21 @@
   color: var(--ink);
   cursor: pointer;
 }
-.consent-box input {
+.customer-portal .consent-box input {
   margin-top: 2px;
 }
-.consent-box p {
+.customer-portal .consent-box p {
   margin-top: 8px;
   padding-inline-start: 28px;
   font-size: 13px;
   color: var(--muted);
 }
-.opt-out-actions {
+.customer-portal .opt-out-actions {
   margin-top: 24px;
   padding-top: 20px;
   border-top: 1px solid var(--border);
 }
-.opt-out-actions button {
+.customer-portal .opt-out-actions button {
   padding: 0;
   border: 0;
   background: none;
@@ -159,66 +159,33 @@
   font-size: 14px;
   font-weight: 500;
 }
-.opt-out-actions button:hover {
+.customer-portal .opt-out-actions button:hover {
   text-decoration: underline;
 }
-.opt-out-actions p {
+.customer-portal .opt-out-actions p {
   margin-top: 4px;
   font-size: 13px;
   color: var(--muted);
 }
-.saved-message {
+.customer-portal .saved-message {
   margin-top: 16px;
   font-size: 14px;
 }
 
-/* Consent status in the customer details dialog */
-.enrollment-link {
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-.enrollment-link h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-.enrollment-link h3 svg {
-  color: var(--accent);
-}
-.enrollment-link p {
-  margin: 4px 0 8px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-/* Customer directory */
-.customer-toolbar {
-  flex-wrap: wrap;
-}
-.customer-toolbar .search-field {
-  margin-inline-start: auto;
-}
-.directory-language {
-  display: block;
-  margin-top: 1px;
-  font-size: 13px;
-  color: var(--muted);
-}
 @media (max-width: 640px) {
   .customer-portal {
     padding: 16px 16px 32px;
   }
-  .portal-header {
+  .customer-portal .portal-header {
     margin-bottom: 28px;
   }
-  .portal-card {
+  .customer-portal .portal-card {
     padding: 24px 20px;
   }
-  .portal-card h1 {
+  .customer-portal .portal-card h1 {
     font-size: 23px;
   }
-  .customer-toolbar .search-field {
+  .customer-portal .customer-toolbar .search-field {
     margin-inline-start: 0;
   }
 }

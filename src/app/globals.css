@@ -1,11 +1,18 @@
 @import 'tailwindcss';
-/* Order matters: shared primitives first, then each area may refine them. */
+/* Order matters: shared primitives and the app shell first, then one stylesheet per page.
+   Page stylesheets scope every rule under their page root (e.g. .content-offers). */
 @import './base.css';
-@import './workspace.css';
-@import './auth.css';
+@import './shell.css';
+@import './overview.css';
 @import './inbox.css';
+@import './customers.css';
+@import './offers.css';
 @import './campaigns.css';
-@import './enrollment.css';
+@import './businesses.css';
+@import './whatsapp.css';
+@import './settings.css';
+@import './auth.css';
+@import './portal.css';
 @theme {
   --font-sans:
     var(--font-latin), var(--font-arabic), ui-sans-serif, system-ui, -apple-system, 'Segoe UI',

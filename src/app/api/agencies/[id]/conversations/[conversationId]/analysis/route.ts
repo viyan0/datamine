@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HttpError, requireAgency } from '@/lib/access';
+import { HttpError, requireInbox } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { analyzeConversation, getAnalysisState } from '@/lib/analysis';
 import { AnalysisError } from '@/lib/anthropic';
@@ -7,7 +7,7 @@ type Context = { params: Promise<{ id: string; conversationId: string }> };
 export async function GET(_request: Request, { params }: Context) {
   try {
     const { id, conversationId } = await params;
-    await requireAgency(id);
+    await requireInbox(id);
     return Response.json(await getAnalysisState(id, conversationId), {
       headers: { 'Cache-Control': 'no-store' },
     });
@@ -19,7 +19,7 @@ export async function POST(request: Request, { params }: Context) {
   try {
     checkOrigin(request);
     const { id, conversationId } = await params;
-    const { membership } = await requireAgency(id);
+    const { membership } = await requireInbox(id);
     if (!['owner', 'admin', 'agent'].includes(membership.role))
       throw new HttpError(403, 'forbidden');
     const { locale } = z

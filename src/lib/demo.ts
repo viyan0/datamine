@@ -16,7 +16,7 @@ const latestSample = new Date(
 );
 
 export const demoData: WorkspaceData = {
-  user: { name: 'Demo explorer', email: 'explorer@example.com', platformAdmin: true },
+  user: { name: 'Demo explorer', email: 'explorer@example.com', platformAdmin: false },
   agencies: [
     {
       id: 'demo-atlas',

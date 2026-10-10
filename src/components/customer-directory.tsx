@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { Search, ShieldCheck, RefreshCw } from 'lucide-react';
+import { Search, RefreshCw } from 'lucide-react';
 import type { SharedProfile } from '@/lib/enrollment-types';
 import { readDemoProfile, sampleProfiles } from '@/lib/demo-enrollment';
 import { Button } from './ui/button';
@@ -54,10 +54,6 @@ export function CustomerDirectory({ demo }: { demo: boolean }) {
   );
   return (
     <>
-      <div className="notice subtle">
-        <ShieldCheck size={20} />
-        <p>{t('directoryHint')}</p>
-      </div>
       <div className="toolbar customer-toolbar">
         <div className="inbox-filters" role="group" aria-label={t('filter')}>
           {['all', 'active', 'optedOut'].map((v) => (

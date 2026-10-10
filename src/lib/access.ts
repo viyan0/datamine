@@ -28,6 +28,19 @@ export async function requireAgency(agencyId: string, manage = false) {
   return { session: s, membership };
 }
 
+// Platform administration does not grant access to customer conversations.
+export async function requireInbox(agencyId: string) {
+  const session = await requireSession();
+  if (session.user.platformRole === 'admin') throw new HttpError(403, 'forbidden');
+  const membership = await agencyAccessForUser(session.user, agencyId);
+  const [agency] = await getDb()
+    .select({ isPlatform: agencies.isPlatform })
+    .from(agencies)
+    .where(eq(agencies.id, agencyId));
+  if (!agency || agency.isPlatform) throw new HttpError(403, 'forbidden');
+  return { session, membership };
+}
+
 // Called only with the authenticated user, never a role supplied by the client.
 export async function agencyAccessForUser(
   current: { id: string; platformRole?: string },

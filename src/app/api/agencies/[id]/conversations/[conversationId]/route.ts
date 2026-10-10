@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { requireAgency, HttpError } from '@/lib/access';
+import { requireInbox, HttpError } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { conversationMessages, updateConversationDetails } from '@/lib/inbox';
 import { inquiryStatuses } from '@/lib/inbox-types';
@@ -9,7 +9,7 @@ type Context = { params: Promise<{ id: string; conversationId: string }> };
 export async function GET(_request: Request, { params }: Context) {
   try {
     const { id, conversationId } = await params;
-    await requireAgency(id);
+    await requireInbox(id);
     return Response.json(
       { messages: await conversationMessages(id, conversationId) },
       { headers: { 'Cache-Control': 'no-store' } },
@@ -22,7 +22,7 @@ export async function PATCH(request: Request, { params }: Context) {
   try {
     checkOrigin(request);
     const { id, conversationId } = await params;
-    const { membership } = await requireAgency(id);
+    const { membership } = await requireInbox(id);
     if (!['owner', 'admin', 'agent'].includes(membership.role))
       throw new HttpError(403, 'forbidden');
     const input = await bodyJson(request);

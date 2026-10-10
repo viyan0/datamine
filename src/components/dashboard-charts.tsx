@@ -2,261 +2,177 @@
 
 import { useId, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { ArrowDownLeft, ArrowUpRight, Building2, MessageCircle } from 'lucide-react';
 import type { DashboardAnalytics, DailyActivity } from '@/lib/dashboard-analytics';
 
-export function DashboardCharts({
-  analytics,
-  businessCount,
-}: {
-  analytics: DashboardAnalytics;
-  businessCount: number;
-}) {
-  const t = useTranslations('dashboard'),
-    locale = useLocale();
-  const [period, setPeriod] = useState(7);
-  const daily = analytics.daily.slice(-period);
-  const received = daily.reduce((total, day) => total + day.received, 0);
-  const sent = daily.reduce((total, day) => total + day.sent, 0);
-  const open = analytics.conversations.new + analytics.conversations.inProgress;
-  const number = new Intl.NumberFormat(locale);
-  const stats = [
-    {
-      label: 'received',
-      value: received,
-      icon: ArrowDownLeft,
-      hint: t('lastDays', { count: period }),
-    },
-    { label: 'sent', value: sent, icon: ArrowUpRight, hint: t('lastDays', { count: period }) },
-    { label: 'openChats', value: open, icon: MessageCircle, hint: t('current') },
-    { label: 'businesses', value: businessCount, icon: Building2, hint: t('total') },
-  ];
-  return (
-    <>
-      <div className="dashboard-metrics">
-        {stats.map(({ label, value, icon: Icon, hint }) => (
-          <article className="metric-tile" key={label}>
-            <div className="metric-label">
-              <span>{t(label)}</span>
-              <Icon size={18} aria-hidden="true" />
-            </div>
-            <strong>{number.format(value)}</strong>
-            <small>{hint}</small>
-          </article>
-        ))}
-      </div>
-      <div className="dashboard-charts">
-        <section className="chart-card activity-chart">
-          <header className="chart-heading">
-            <h2>{t('activity')}</h2>
-            <div className="chart-period" role="group" aria-label={t('period')}>
-              {[7, 30].map((days) => (
-                <button key={days} aria-pressed={period === days} onClick={() => setPeriod(days)}>
-                  {t('days', { count: days })}
-                </button>
-              ))}
-            </div>
-          </header>
-          <div className="chart-legend">
-            <span>
-              <i className="received-key" />
-              {t('received')}
-            </span>
-            <span>
-              <i className="sent-key" />
-              {t('sent')}
-            </span>
-            <small>{t('timeZone')}</small>
-          </div>
-          <ActivityChart daily={daily} />
-        </section>
-        <ConversationChart counts={analytics.conversations} />
-      </div>
-    </>
-  );
+// Latin digits on both server and client, so Arabic-locale pages hydrate identically.
+export function useNumber() {
+  const locale = useLocale();
+  return new Intl.NumberFormat(locale, { numberingSystem: 'latn' });
 }
 
-// A column that sits square on the baseline with a rounded data end.
-function columnPath(x: number, baseline: number, width: number, height: number) {
-  if (height <= 0) return '';
-  const r = Math.min(4, width / 2, height),
-    top = baseline - height;
-  return `M${x} ${baseline}V${top + r}Q${x} ${top} ${x + r} ${top}H${x + width - r}Q${x + width} ${top} ${x + width} ${top + r}V${baseline}Z`;
+function useDay() {
+  const locale = useLocale();
+  return (value: string) =>
+    new Intl.DateTimeFormat(locale, {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+      numberingSystem: 'latn',
+    }).format(new Date(`${value}T12:00:00Z`));
 }
 
-function ActivityChart({ daily }: { daily: DailyActivity[] }) {
-  const t = useTranslations('dashboard'),
-    locale = useLocale(),
-    titleId = useId();
-  const [active, setActive] = useState<string | null>(null);
-  const number = new Intl.NumberFormat(locale);
-  const date = (value: string) =>
-    new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
-      new Date(`${value}T12:00:00Z`),
-    );
-  const max = Math.max(4, ...daily.flatMap((day) => [day.received, day.sent]));
-  const ceiling = Math.ceil(max / 4) * 4;
-  const width = 620,
-    height = 168,
-    left = 30,
-    top = 22;
-  const step = width / daily.length,
-    bar = Math.min(18, step * 0.3);
-  const hasMessages = daily.some((day) => day.received || day.sent);
-  const selected = daily.find((day) => day.date === active);
-  return (
-    <div className="activity-plot">
-      <svg viewBox="0 0 668 230" role="img" aria-labelledby={titleId} style={{ direction: 'ltr' }}>
-        <title id={titleId}>{t('activity')}</title>
-        {[0, 1, 2, 3, 4].map((tick) => {
-          const y = top + height - (tick * height) / 4;
-          return (
-            <g key={tick} aria-hidden="true">
-              <line
-                x1={left}
-                x2={left + width}
-                y1={y}
-                y2={y}
-                className={tick ? 'chart-gridline' : 'chart-baseline'}
-              />
-              <text x={left - 9} y={y + 4} textAnchor="end" className="chart-axis">
-                {number.format((ceiling * tick) / 4)}
-              </text>
-            </g>
-          );
-        })}
-        {daily.map((day, index) => {
-          const x = left + (index + 0.5) * step;
-          const label = `${date(day.date)}: ${t('received')} ${number.format(day.received)}, ${t('sent')} ${number.format(day.sent)}`;
-          return (
-            <g
-              key={day.date}
-              role="img"
-              aria-label={label}
-              tabIndex={0}
-              className="chart-day"
-              onFocus={() => setActive(day.date)}
-              onBlur={() => setActive(null)}
-              onMouseEnter={() => setActive(day.date)}
-              onMouseLeave={() => setActive(null)}
-            >
-              <title>{label}</title>
-              <rect
-                x={x - step / 2 + 1}
-                y={top}
-                width={step - 2}
-                height={height}
-                rx={5}
-                className="chart-hit-area"
-              />
-              <path
-                d={columnPath(x - bar - 1.5, top + height, bar, (day.received / ceiling) * height)}
-                className="chart-bar-received"
-              />
-              <path
-                d={columnPath(x + 1.5, top + height, bar, (day.sent / ceiling) * height)}
-                className="chart-bar-sent"
-              />
-              {(daily.length === 7 ||
-                (index % 7 === 0 && index < daily.length - 3) ||
-                index === daily.length - 1) && (
-                <text
-                  x={x}
-                  y={top + height + 25}
-                  textAnchor="middle"
-                  className="chart-axis"
-                  aria-hidden="true"
-                >
-                  {date(day.date)}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
-      {!hasMessages && <p className="chart-empty">{t('noActivity')}</p>}
-      <div className="chart-readout" aria-live="polite">
-        {selected ? (
-          <>
-            <strong>{date(selected.date)}</strong>
-            <span>
-              {t('received')} {number.format(selected.received)}
-            </span>
-            <span>
-              {t('sent')} {number.format(selected.sent)}
-            </span>
-          </>
-        ) : (
-          <span>
-            {date(daily[0].date)} · {date(daily[daily.length - 1].date)}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
+export const statusKeys = ['new', 'inProgress', 'closed'] as const;
 
-function ConversationChart({ counts }: { counts: DashboardAnalytics['conversations'] }) {
+/** Tall pill bars for conversations by status (white, hatched and accent pills). */
+export function StatusBars({ counts }: { counts: DashboardAnalytics['conversations'] }) {
   const t = useTranslations('dashboard'),
     status = useTranslations('crm'),
-    locale = useLocale();
-  const number = new Intl.NumberFormat(locale);
-  const total = counts.new + counts.inProgress + counts.closed;
-  // Segment colours come from the shared inquiry status tokens, matching the inbox dots.
-  const segments = [
-    { key: 'new', count: counts.new },
-    { key: 'inProgress', count: counts.inProgress },
-    { key: 'closed', count: counts.closed },
-  ];
-  // Leave a thin surface-coloured gap between segments when more than one is visible.
-  const gap = segments.filter((segment) => segment.count).length > 1 ? 0.6 : 0;
+    number = useNumber();
+  const max = Math.max(1, ...statusKeys.map((key) => counts[key]));
   return (
-    <section className="chart-card conversation-chart">
-      <header className="chart-heading">
-        <h2>{t('conversations')}</h2>
-        <span>{t('current')}</span>
+    <section className="well ov-status" aria-label={t('conversations')}>
+      <div className="ov-status-bars">
+        {statusKeys.map((key) => (
+          <div className="ov-status-col" key={key}>
+            <div
+              className={`ov-pill ov-pill-${key}`}
+              style={{ height: `${Math.max(18, (counts[key] / max) * 100)}%` }}
+            >
+              <strong>{number.format(counts[key])}</strong>
+            </div>
+            <span>{status(key)}</span>
+          </div>
+        ))}
+      </div>
+      <p className="ov-caption">
+        <span>{t('conversations')}</span>
+        <b>{t('current')}</b>
+      </p>
+    </section>
+  );
+}
+
+/** Red summary panel plus daily pill bars, like the reference "average monthly" card. */
+export function ActivityCard({
+  daily,
+  period,
+  setPeriod,
+  open,
+}: {
+  daily: DailyActivity[];
+  period: number;
+  setPeriod: (days: number) => void;
+  open: number;
+}) {
+  const t = useTranslations('dashboard'),
+    number = useNumber(),
+    day = useDay(),
+    titleId = useId();
+  const [active, setActive] = useState<string | null>(null);
+  const received = daily.reduce((sum, d) => sum + d.received, 0);
+  const sent = daily.reduce((sum, d) => sum + d.sent, 0);
+  const max = Math.max(4, ...daily.flatMap((d) => [d.received, d.sent]));
+  const ceiling = Math.ceil(max / 4) * 4;
+  const peak = daily.reduce((best, d) => (d.received > best.received ? d : best), daily[0]);
+  const selected = daily.find((d) => d.date === active);
+  const ticks = [4, 3, 2, 1, 0].map((n) => (ceiling * n) / 4);
+  return (
+    <section className="card ov-activity" aria-labelledby={titleId}>
+      <header className="ov-activity-head">
+        <div>
+          <p className="ov-muted">{t('activity')}</p>
+          <h2 id={titleId}>{t('lastDays', { count: period })}</h2>
+        </div>
+        <div className="segmented" role="group" aria-label={t('period')}>
+          {[7, 30].map((days) => (
+            <button key={days} aria-pressed={period === days} onClick={() => setPeriod(days)}>
+              {t('days', { count: days })}
+            </button>
+          ))}
+        </div>
       </header>
-      <div className="conversation-ring">
-        <svg viewBox="0 0 200 200" aria-hidden="true">
-          <circle cx="100" cy="100" r="78" fill="none" className="ring-track" strokeWidth="18" />
-          {total > 0 &&
-            segments.map((segment, index) => {
-              const offset =
-                (segments.slice(0, index).reduce((sum, item) => sum + item.count, 0) / total) * 100;
-              const length = Math.max((segment.count / total) * 100 - gap, 0);
+      <div className="ov-activity-body">
+        <div className="ov-red">
+          <span className="ov-red-label">{t('activity')}</span>
+          <dl>
+            <div>
+              <dt>{t('received')}</dt>
+              <dd>{number.format(received)}</dd>
+            </div>
+            <div>
+              <dt>{t('sent')}</dt>
+              <dd>
+                {number.format(sent)}
+                <span> / {number.format(received)}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>{t('openChats')}</dt>
+              <dd>{number.format(open)}</dd>
+            </div>
+          </dl>
+        </div>
+        <div className="ov-plot">
+          <div className={`ov-days ${daily.length > 7 ? 'is-dense' : ''}`}>
+            {daily.map((d, index) => {
+              const label = `${day(d.date)}: ${t('received')} ${number.format(d.received)}, ${t('sent')} ${number.format(d.sent)}`;
+              const showLabel = daily.length === 7 || index % 7 === 0 || index === daily.length - 1;
               return (
-                <circle
-                  key={segment.key}
-                  cx="100"
-                  cy="100"
-                  r="78"
-                  fill="none"
-                  className={`ring-${segment.key}`}
-                  strokeWidth="18"
-                  pathLength="100"
-                  strokeDasharray={`${length} 100`}
-                  strokeDashoffset={-offset}
-                  transform="rotate(-90 100 100)"
-                />
+                <button
+                  type="button"
+                  key={d.date}
+                  className={`ov-day ${active === d.date ? 'is-active' : ''}`}
+                  aria-label={label}
+                  title={label}
+                  onFocus={() => setActive(d.date)}
+                  onBlur={() => setActive(null)}
+                  onMouseEnter={() => setActive(d.date)}
+                  onMouseLeave={() => setActive(null)}
+                >
+                  {peak.received > 0 && d.date === peak.date && (
+                    <span className="ov-tag">{number.format(d.received)}</span>
+                  )}
+                  <span className="ov-bars">
+                    <i
+                      className="ov-bar-received"
+                      style={{ height: `${(d.received / ceiling) * 100}%` }}
+                    />
+                    <i className="ov-bar-sent" style={{ height: `${(d.sent / ceiling) * 100}%` }} />
+                  </span>
+                  <small aria-hidden="true">{showLabel ? day(d.date) : ''}</small>
+                </button>
               );
             })}
-        </svg>
-        <div>
-          <strong>{number.format(total)}</strong>
-          <span>{t('totalChats')}</span>
+          </div>
+          <ol className="ov-ticks" aria-hidden="true">
+            {ticks.map((tick) => (
+              <li key={tick}>{number.format(tick)}</li>
+            ))}
+          </ol>
         </div>
       </div>
-      <ul className="conversation-legend">
-        {segments.map((segment) => (
-          <li key={segment.key}>
-            <span>
-              <i className={`key-${segment.key}`} />
-              {status(segment.key)}
-            </span>
-            <strong>{number.format(segment.count)}</strong>
-          </li>
-        ))}
-      </ul>
+      <footer className="ov-activity-foot" aria-live="polite">
+        <span className="ov-key">
+          <i className="ov-key-received" />
+          {t('received')}
+        </span>
+        <span className="ov-key">
+          <i className="ov-key-sent" />
+          {t('sent')}
+        </span>
+        <span className="ov-readout">
+          {selected ? (
+            <>
+              <b>{day(selected.date)}</b> · {t('received')} {number.format(selected.received)} ·{' '}
+              {t('sent')} {number.format(selected.sent)}
+            </>
+          ) : received || sent ? (
+            `${day(daily[0].date)} – ${day(daily[daily.length - 1].date)} · ${t('timeZone')}`
+          ) : (
+            t('noActivity')
+          )}
+        </span>
+      </footer>
     </section>
   );
 }

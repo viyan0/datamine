@@ -27,7 +27,15 @@ async function request(path: string, method = 'GET', input?: unknown) {
   return result;
 }
 
-export function Products({ data, demo }: { data: WorkspaceData; demo: boolean }) {
+export function Products({
+  data,
+  demo,
+  startCreating = false,
+}: {
+  data: WorkspaceData;
+  demo: boolean;
+  startCreating?: boolean;
+}) {
   const t = useTranslations('catalog'),
     errors = useTranslations('errors');
   const locale = useLocale(),
@@ -35,7 +43,12 @@ export function Products({ data, demo }: { data: WorkspaceData; demo: boolean })
   const [products, setProducts] = useState<ProductView[]>([]);
   const [loading, setLoading] = useState(!demo),
     [error, setError] = useState('');
-  const [editing, setEditing] = useState<ProductView | 'new' | null>(null);
+  const [editing, setEditing] = useState<ProductView | 'new' | null>(() =>
+    startCreating &&
+    data.agencies.some((item) => data.user.platformAdmin || ['owner', 'admin'].includes(item.role))
+      ? 'new'
+      : null,
+  );
   const [offer, setOffer] = useState<ProductView | null>(null);
   const [viewedAt, setViewedAt] = useState(() => Date.now());
   const [formOpenedAt, setFormOpenedAt] = useState(() => Date.now());
@@ -161,7 +174,6 @@ export function Products({ data, demo }: { data: WorkspaceData; demo: boolean })
   const draft = editing && editing !== 'new' ? editing : null;
   return (
     <>
-      {demo && <p className="notice">{t('demoHint')}</p>}
       <div className="toolbar product-toolbar">
         <label className="search-field">
           <Search size={17} />

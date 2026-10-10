@@ -1,0 +1,13 @@
+/* Businesses and team pages. Every rule is scoped under .content-agencies or .content-team. */
+.content-agencies .language-cell,
+.content-agencies .member-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.content-agencies .language-cell svg,
+.content-agencies .member-count svg {
+  color: var(--subtle);
+}

@@ -79,8 +79,8 @@ export function ConversationAnalysis({
     ? [...(result.subject ? [{ label: 'request', ...result.subject }] : []), ...result.facts]
     : [];
   return (
-    <div className="analysis-card" aria-label={t('title')} aria-busy={busy}>
-      <div className="analysis-heading">
+    <details className="analysis-card" aria-label={t('title')} aria-busy={busy}>
+      <summary className="analysis-heading">
         <span>
           <Sparkles size={15} />
           <strong>{t('title')}</strong>
@@ -88,78 +88,81 @@ export function ConversationAnalysis({
         <span className="analysis-auto">
           {busy && <LoaderCircle size={13} className="analysis-spinner" />}
           {t(demo ? 'sampleBadge' : busy ? 'analyzing' : 'automatic')}
+          <ChevronDown size={15} className="analysis-chevron" aria-hidden="true" />
         </span>
-      </div>
-      {demo && <p className="analysis-caption">{t('demoHint')}</p>}
-      {!demo && loaded && !state.configured && <p className="analysis-notice">{t('setup')}</p>}
-      {!demo && state.configured && state.status === 'error' && (
-        <p className="analysis-notice">{t('retrying')}</p>
-      )}
-      {!demo && state.status === 'awaitingConsent' && (
-        <p className="analysis-notice">{t('awaitingConsent')}</p>
-      )}
-      {!demo && state.status === 'waitingForText' && (
-        <p className="analysis-notice">{errors('analysisNoText')}</p>
-      )}
-      {error && (
-        <p className="inbox-error" role="alert">
-          {errors.has(error) ? errors(error) : errors('analysisUnavailable')}
-        </p>
-      )}
-      {result && (
-        <>
-          <div className="analysis-tags">
-            {result.services.map((s) => (
-              <span key={s}>{crm.has(s) ? crm(s) : s}</span>
-            ))}
-            <span>
-              {t.has(`intents.${result.intent}`) ? t(`intents.${result.intent}`) : result.intent}
-            </span>
-          </div>
-          <p className="analysis-summary" dir="auto">
-            {result.summary}
+      </summary>
+      <div className="analysis-body">
+        {demo && <p className="analysis-caption">{t('demoHint')}</p>}
+        {!demo && loaded && !state.configured && <p className="analysis-notice">{t('setup')}</p>}
+        {!demo && state.configured && state.status === 'error' && (
+          <p className="analysis-notice">{t('retrying')}</p>
+        )}
+        {!demo && state.status === 'awaitingConsent' && (
+          <p className="analysis-notice">{t('awaitingConsent')}</p>
+        )}
+        {!demo && state.status === 'waitingForText' && (
+          <p className="analysis-notice">{errors('analysisNoText')}</p>
+        )}
+        {error && (
+          <p className="inbox-error" role="alert">
+            {errors.has(error) ? errors(error) : errors('analysisUnavailable')}
           </p>
-          <details className="analysis-details">
-            <summary>
-              {t('travelDetails')}
-              <ChevronDown size={13} />
-            </summary>
-            <dl>
-              {facts.map((fact, i) => (
-                <div key={i}>
-                  <dt dir="auto">{t.has(fact.label) ? t(fact.label) : fact.label}</dt>
-                  <dd dir="auto">{fact.value}</dd>
-                </div>
+        )}
+        {result && (
+          <>
+            <div className="analysis-tags">
+              {result.services.map((s) => (
+                <span key={s}>{crm.has(s) ? crm(s) : s}</span>
               ))}
-              <div>
-                <dt>{t('language')}</dt>
-                <dd>{t(`languages.${result.language}`)}</dd>
-              </div>
-            </dl>
-            <p className="analysis-next">
-              <strong>{t('nextStep')}</strong>
-              <span dir="auto">{result.nextStep}</span>
+              <span>
+                {t.has(`intents.${result.intent}`) ? t(`intents.${result.intent}`) : result.intent}
+              </span>
+            </div>
+            <p className="analysis-summary" dir="auto">
+              {result.summary}
             </p>
-            {result.reviewNote && (
-              <p className="analysis-notice" dir="auto">
-                {result.reviewNote}
-              </p>
-            )}
-            {!!facts.length && (
-              <details className="analysis-evidence">
-                <summary>{t('sources')}</summary>
+            <details className="analysis-details">
+              <summary>
+                {t('travelDetails')}
+                <ChevronDown size={13} />
+              </summary>
+              <dl>
                 {facts.map((fact, i) => (
                   <div key={i}>
-                    <strong>{t.has(fact.label) ? t(fact.label) : fact.label}</strong>
-                    <q dir="auto">{fact.quote}</q>
+                    <dt dir="auto">{t.has(fact.label) ? t(fact.label) : fact.label}</dt>
+                    <dd dir="auto">{fact.value}</dd>
                   </div>
                 ))}
-              </details>
-            )}
-            <p className="analysis-footnote">{t(demo ? 'sampleResult' : 'reviewHint')}</p>
-          </details>
-        </>
-      )}
-    </div>
+                <div>
+                  <dt>{t('language')}</dt>
+                  <dd>{t(`languages.${result.language}`)}</dd>
+                </div>
+              </dl>
+              <p className="analysis-next">
+                <strong>{t('nextStep')}</strong>
+                <span dir="auto">{result.nextStep}</span>
+              </p>
+              {result.reviewNote && (
+                <p className="analysis-notice" dir="auto">
+                  {result.reviewNote}
+                </p>
+              )}
+              {!!facts.length && (
+                <details className="analysis-evidence">
+                  <summary>{t('sources')}</summary>
+                  {facts.map((fact, i) => (
+                    <div key={i}>
+                      <strong>{t.has(fact.label) ? t(fact.label) : fact.label}</strong>
+                      <q dir="auto">{fact.quote}</q>
+                    </div>
+                  ))}
+                </details>
+              )}
+              <p className="analysis-footnote">{t(demo ? 'sampleResult' : 'reviewHint')}</p>
+            </details>
+          </>
+        )}
+      </div>
+    </details>
   );
 }

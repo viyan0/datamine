@@ -29,6 +29,20 @@ import {
   POST as savePlatformSettings,
 } from '../src/app/api/platform-settings/route';
 import { businessChatOfferMode } from '../src/lib/platform-settings';
+
+import { loadWorkspace } from '../src/lib/workspace';
+import { GET as inboxList } from '../src/app/api/agencies/[id]/conversations/route';
+import { GET as inboxMessages } from '../src/app/api/agencies/[id]/messages/route';
+import {
+  GET as inboxDetail,
+  PATCH as inboxEdit,
+} from '../src/app/api/agencies/[id]/conversations/[conversationId]/route';
+import {
+  GET as inboxAnalysis,
+  POST as inboxAnalyze,
+} from '../src/app/api/agencies/[id]/conversations/[conversationId]/analysis/route';
+import { POST as inboxReply } from '../src/app/api/agencies/[id]/conversations/[conversationId]/reply/route';
+import { POST as inboxEnroll } from '../src/app/api/agencies/[id]/conversations/[conversationId]/enrollment/route';
 import type { ProductView } from '../src/lib/product-types';
 
 // Real request cookies and route guards, without starting a second Next dev build.
@@ -69,6 +83,25 @@ async function dispatch(request: NextRequest) {
   return workAsyncStorage.run(work, () =>
     workUnitAsyncStorage.run(requestStore, async () => {
       if (url.pathname.startsWith('/api/auth/')) return getAuth().handler(request);
+      const inbox = url.pathname.match(
+        /^\/api\/agencies\/([^/]+)\/(messages|conversations)(?:\/([^/]+))?(?:\/(analysis|reply|enrollment))?$/,
+      );
+      if (inbox) {
+        const context = {
+          params: Promise.resolve({ id: inbox[1], conversationId: inbox[3] || '' }),
+        };
+        if (inbox[2] === 'messages') return inboxMessages(request, context);
+        if (!inbox[3]) return inboxList(request, context);
+        if (inbox[4] === 'analysis')
+          return request.method === 'GET'
+            ? inboxAnalysis(request, context)
+            : inboxAnalyze(request, context);
+        if (inbox[4] === 'reply') return inboxReply(request, context);
+        if (inbox[4] === 'enrollment') return inboxEnroll(request, context);
+        return request.method === 'PATCH'
+          ? inboxEdit(request, context)
+          : inboxDetail(request, context);
+      }
       if (url.pathname === '/api/agencies') return createBusiness(request);
       if (url.pathname === '/api/invitations') return invite(request);
       if (url.pathname === '/api/invitations/accept') return accept(request);
@@ -204,6 +237,62 @@ test('HTTP business setup and campaign permissions use real authenticated sessio
       .insert(schema.memberships)
       .values({ id: randomUUID(), agencyId: agencyIds[0], userId: 'viewer', role: 'viewer' });
     const viewer = await login('viewer@example.test');
+    await t.test(
+      'admin has platform totals without business membership or inbox access',
+      async () => {
+        await db
+          .insert(schema.agencies)
+          .values({ id: 'platform-only', name: 'Datamine', slug: 'datamine', isPlatform: true });
+        await db
+          .insert(schema.memberships)
+          .values({ id: randomUUID(), agencyId: agencyIds[0], userId: 'central', role: 'owner' });
+        const adminWorkspace = await loadWorkspace(
+          { id: 'central', name: 'Admin', email: 'central@example.test', platformRole: 'admin' },
+          true,
+        );
+        assert.equal(adminWorkspace.agencies.length, 2);
+        assert.ok(adminWorkspace.agencies.every((a) => a.id !== 'platform-only'));
+        assert.ok(adminWorkspace.members.every((m) => m.email !== 'central@example.test'));
+        assert.equal(adminWorkspace.analytics, undefined);
+        assert.equal(adminWorkspace.platformOverview?.activeOffers, 0);
+        const ownerUser = (
+          await db.select().from(schema.user).where(eq(schema.user.email, 'owner@example.test'))
+        )[0];
+        const businessWorkspace = await loadWorkspace(ownerUser, true);
+        assert.deepEqual(
+          businessWorkspace.agencies.map((a) => a.id),
+          [agencyIds[0]],
+        );
+        assert.equal(businessWorkspace.platformOverview, undefined);
+        assert.ok(businessWorkspace.analytics);
+        const base = '/api/agencies/' + agencyIds[0];
+        for (const [suffix, method] of [
+          ['messages', 'GET'],
+          ['conversations', 'GET'],
+          ['conversations/test-chat', 'GET'],
+          ['conversations/test-chat', 'PATCH'],
+          ['conversations/test-chat/analysis', 'GET'],
+          ['conversations/test-chat/analysis', 'POST'],
+          ['conversations/test-chat/reply', 'POST'],
+          ['conversations/test-chat/enrollment', 'POST'],
+        ]) {
+          assert.equal(
+            (await call(base + '/' + suffix, central, method === 'GET' ? undefined : {}, method))
+              .status,
+            403,
+            suffix + ' must reject admin',
+          );
+        }
+        assert.equal((await call(base + '/conversations')).status, 401);
+        assert.equal((await call(base + '/conversations', owner)).status, 200);
+        assert.equal((await call(base + '/messages', owner)).status, 200);
+        assert.equal(
+          (await call('/api/agencies/' + agencyIds[1] + '/conversations', owner)).status,
+          403,
+        );
+        await db.delete(schema.memberships).where(eq(schema.memberships.userId, 'central'));
+      },
+    );
     const offer = (agencyId: string) => ({
       agencyId,
       title: 'Flowers',

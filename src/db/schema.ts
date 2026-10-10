@@ -84,6 +84,7 @@ export const agencies = pgTable('agencies', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
+  isPlatform: boolean('is_platform').default(false).notNull(),
   locale: text('locale').default('en').notNull(),
   industry: text('industry').default('General business').notNull(),
   categories: jsonb('categories').$type<string[]>().default([]).notNull(),

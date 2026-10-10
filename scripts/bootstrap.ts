@@ -22,18 +22,12 @@ try {
       'INSERT INTO accounts (id,account_id,provider_id,user_id,password) VALUES ($1,$2,$3,$2,$4)',
       [randomUUID(), id, 'credential', await hashPassword(password)],
     );
-    await client.query('INSERT INTO agencies (id,name,slug) VALUES ($1,$2,$3)', [
+    await client.query('INSERT INTO agencies (id,name,slug,is_platform) VALUES ($1,$2,$3,true)', [
       agencyId,
       'Datamine',
       'datamine',
     ]);
-    await client.query('INSERT INTO memberships (id,agency_id,user_id,role) VALUES ($1,$2,$3,$4)', [
-      randomUUID(),
-      agencyId,
-      id,
-      'owner',
-    ]);
-    console.log('Initial workspace owner created.');
+    console.log('Initial platform administrator created.');
   } else {
     console.log('Bootstrap skipped: workspace already initialized.');
   }

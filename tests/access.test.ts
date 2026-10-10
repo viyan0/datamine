@@ -81,11 +81,9 @@ test('central administration, business isolation, and business owner login invit
       assert.deepEqual(workspace.agencies.map((a) => a.id).sort(), ['one', 'two']);
       assert.equal(workspace.connections.length, 2);
       assert.equal(workspace.activity.length, 2);
-      assert.equal(workspace.messageCount, 2);
-      assert.equal(
-        workspace.analytics?.daily.reduce((count, day) => count + day.received, 0),
-        2,
-      );
+      assert.equal(workspace.messageCount, 0);
+      assert.equal(workspace.analytics, undefined);
+      assert.equal(workspace.platformOverview?.offersByBusiness.length, 2);
       assert.equal((await agencyAccessForUser(central, 'two', true)).role, 'admin');
       await assert.rejects(agencyAccessForUser(central, 'missing'), { status: 404 });
     });

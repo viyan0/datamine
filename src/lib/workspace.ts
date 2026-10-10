@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, ne, gte, lte, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 import {
   agencies,
@@ -8,6 +8,9 @@ import {
   user,
   messages,
   auditEvents,
+  products,
+  sharedProfiles,
+  recommendationJobs,
 } from '@/db/schema';
 import { activityDays, type DashboardAnalytics } from './dashboard-analytics';
 import { centralConnection } from './central-whatsapp';
@@ -49,6 +52,12 @@ export type WorkspaceData = {
   activity: { id: string; action: string; agencyName: string; createdAt: string }[];
   messageCount: number;
   analytics?: DashboardAnalytics;
+  platformOverview?: {
+    activeOffers: number;
+    enrolledCustomers: number;
+    sentOffers: number;
+    offersByBusiness: { id: string; name: string; count: number }[];
+  };
 };
 export async function loadWorkspace(
   current: {
@@ -83,14 +92,19 @@ export async function loadWorkspace(
       memberships,
       and(eq(agencies.id, memberships.agencyId), eq(memberships.userId, current.id)),
     )
-    .where(current.platformRole === 'admin' ? undefined : eq(memberships.userId, current.id));
+    .where(
+      and(
+        eq(agencies.isPlatform, false),
+        current.platformRole === 'admin' ? undefined : eq(memberships.userId, current.id),
+      ),
+    );
   const ids = agencyRows.map((a) => a.id);
   const own = {
     name: current.name,
     email: current.email,
     platformAdmin: current.platformRole === 'admin',
   };
-  if (!ids.length)
+  if (!ids.length && !own.platformAdmin)
     return {
       user: own,
       centralWhatsapp,
@@ -123,7 +137,7 @@ export async function loadWorkspace(
       })
       .from(connections)
       .innerJoin(agencies, eq(agencies.id, connections.agencyId))
-      .where(inArray(connections.agencyId, ids)),
+      .where(own.platformAdmin ? undefined : inArray(connections.agencyId, ids)),
     db
       .select({
         id: memberships.id,
@@ -136,7 +150,7 @@ export async function loadWorkspace(
       .from(memberships)
       .innerJoin(agencies, eq(agencies.id, memberships.agencyId))
       .innerJoin(user, eq(user.id, memberships.userId))
-      .where(inArray(memberships.agencyId, ids)),
+      .where(and(inArray(memberships.agencyId, ids), ne(user.platformRole, 'admin'))),
     db
       .select({
         id: auditEvents.id,
@@ -149,12 +163,16 @@ export async function loadWorkspace(
       .where(inArray(agencies.id, ids))
       .orderBy(desc(auditEvents.createdAt))
       .limit(8),
-    db
-      .select({ count: sql<number>`count(*)::integer` })
-      .from(messages)
-      .where(and(inArray(messages.agencyId, ids), eq(messages.direction, 'inbound'))),
-    includeAnalytics ? loadDashboardAnalytics(ids) : undefined,
+    own.platformAdmin
+      ? Promise.resolve([{ count: 0 }])
+      : db
+          .select({ count: sql<number>`count(*)::integer` })
+          .from(messages)
+          .where(and(inArray(messages.agencyId, ids), eq(messages.direction, 'inbound'))),
+    includeAnalytics && !own.platformAdmin ? loadDashboardAnalytics(ids) : undefined,
   ]);
+  const platformOverview =
+    includeAnalytics && own.platformAdmin ? await loadPlatformOverview() : undefined;
   return {
     user: own,
     centralWhatsapp,
@@ -168,6 +186,50 @@ export async function loadWorkspace(
     activity: activityRows.map((a) => ({ ...a, createdAt: a.createdAt.toISOString() })),
     messageCount: countRows[0]?.count ?? 0,
     ...(analytics ? { analytics } : {}),
+    ...(platformOverview ? { platformOverview } : {}),
+  };
+}
+
+async function loadPlatformOverview(): Promise<NonNullable<WorkspaceData['platformOverview']>> {
+  const db = getDb();
+  const [offersByBusiness, customers, sent] = await Promise.all([
+    db
+      .select({
+        id: agencies.id,
+        name: agencies.name,
+        count: sql<number>`count(${products.id})::integer`,
+      })
+      .from(agencies)
+      .leftJoin(
+        products,
+        and(
+          eq(products.agencyId, agencies.id),
+          eq(products.active, true),
+          gte(products.expiresAt, new Date()),
+        ),
+      )
+      .where(eq(agencies.isPlatform, false))
+      .groupBy(agencies.id, agencies.name)
+      .orderBy(agencies.name),
+    db
+      .select({ count: sql<number>`count(*)::integer` })
+      .from(sharedProfiles)
+      .where(eq(sharedProfiles.status, 'active')),
+    db
+      .select({ count: sql<number>`count(*)::integer` })
+      .from(recommendationJobs)
+      .where(
+        and(
+          inArray(recommendationJobs.status, ['accepted', 'sent', 'delivered', 'read']),
+          sql`${recommendationJobs.campaignId} is not null`,
+        ),
+      ),
+  ]);
+  return {
+    activeOffers: offersByBusiness.reduce((sum, item) => sum + item.count, 0),
+    enrolledCustomers: customers[0].count,
+    sentOffers: sent[0].count,
+    offersByBusiness,
   };
 }
 

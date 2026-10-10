@@ -22,13 +22,25 @@ async function api(path: string, body?: unknown) {
   if (!r.ok) throw new Error(data.error);
   return data;
 }
-export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }) {
+export function Campaigns({
+  data,
+  demo,
+  startCreating = false,
+}: {
+  data: WorkspaceData;
+  demo: boolean;
+  startCreating?: boolean;
+}) {
   const t = useTranslations('offers'),
     errors = useTranslations('errors'),
     locale = useLocale();
   const [items, setItems] = useState<CampaignView[]>(demo ? demoCampaigns : []),
     [selected, setSelected] = useState(''),
-    [creating, setCreating] = useState(false),
+    [creating, setCreating] = useState(
+      () =>
+        startCreating &&
+        (data.user.platformAdmin || data.agencies.some((a) => ['owner', 'admin'].includes(a.role))),
+    ),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [configured, setConfigured] = useState<boolean | null>(demo ? true : null);
@@ -151,7 +163,6 @@ export function Campaigns({ data, demo }: { data: WorkspaceData; demo: boolean }
   }
   return (
     <>
-      {demo && <p className="notice">{t('demoHint')}</p>}
       {configured === false && !demo && <p className="notice">{t('aiSetup')}</p>}
       <div className="toolbar">
         <span>{t('count', { count: items.length })}</span>

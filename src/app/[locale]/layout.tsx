@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
-import { Inter, Vazirmatn } from 'next/font/google';
+import { Host_Grotesk, Vazirmatn } from 'next/font/google';
 import { NextIntlClientProvider, hasLocale } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
 import '../globals.css';
-// Latin text uses Inter; Arabic and Sorani glyphs fall through to Vazirmatn.
-const inter = Inter({ subsets: ['latin'], variable: '--font-latin', display: 'swap' });
+// Latin text uses Host Grotesk; Arabic and Sorani glyphs fall through to Vazirmatn.
+const hostGrotesk = Host_Grotesk({ subsets: ['latin'], variable: '--font-latin', display: 'swap' });
 const vazirmatn = Vazirmatn({ subsets: ['arabic'], variable: '--font-arabic', display: 'swap' });
 export const metadata: Metadata = {
   title: { default: 'Datamine · Business workspace', template: '%s · Datamine' },
@@ -27,7 +27,7 @@ export default async function LocaleLayout({
     <html
       lang={locale}
       dir={locale === 'en' ? 'ltr' : 'rtl'}
-      className={`${inter.variable} ${vazirmatn.variable}`}
+      className={`${hostGrotesk.variable} ${vazirmatn.variable}`}
     >
       <body>
         <NextIntlClientProvider>{children}</NextIntlClientProvider>

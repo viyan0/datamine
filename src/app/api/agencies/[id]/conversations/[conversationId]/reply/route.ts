@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HttpError, requireAgency } from '@/lib/access';
+import { HttpError, requireInbox } from '@/lib/access';
 import { apiError, bodyJson, checkOrigin } from '@/lib/http';
 import { replyToConversation } from '@/lib/inbox';
 import { wakeAutomation } from '@/lib/automation';
@@ -10,7 +10,7 @@ export async function POST(
   try {
     checkOrigin(request);
     const { id, conversationId } = await params;
-    const { membership } = await requireAgency(id);
+    const { membership } = await requireInbox(id);
     if (!['owner', 'admin', 'agent'].includes(membership.role))
       throw new HttpError(403, 'forbidden');
     const { body, requestId } = z

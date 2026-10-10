@@ -50,21 +50,24 @@ export function AgencyInbox({ data, demo }: { data: WorkspaceData; demo: boolean
   const agency = data.agencies.find((a) => a.id === agencyId);
   return (
     <section className="inbox-workspace">
-      <div className="inbox-toolbar">
-        <label>
-          {t('agencyInbox')}
-          <select value={agencyId} onChange={(e) => setAgencyId(e.target.value)}>
-            {data.agencies.map((a) => (
-              <option value={a.id} key={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {demo && <span className="inbox-context">{t('sampleHint')}</span>}
-      </div>
       {agency ? (
         <InboxThreads
+          picker={
+            data.agencies.length > 1 ? (
+              <select
+                className="inbox-picker"
+                aria-label={t('agencyInbox')}
+                value={agencyId}
+                onChange={(e) => setAgencyId(e.target.value)}
+              >
+                {data.agencies.map((a) => (
+                  <option value={a.id} key={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            ) : undefined
+          }
           key={agencyId}
           agencyId={agencyId}
           categories={agency.categories}
@@ -85,11 +88,14 @@ function InboxThreads({
   demo,
   editable,
   categories,
+  picker,
 }: {
   agencyId: string;
   demo: boolean;
   editable: boolean;
   categories: string[];
+  /** Business selector shown in place of the list title when there are several businesses. */
+  picker?: React.ReactNode;
 }) {
   const t = useTranslations('crm'),
     locale = useLocale();
@@ -161,7 +167,7 @@ function InboxThreads({
       <div className={`inbox-layout ${mobileOpen && current ? 'thread-open' : ''}`}>
         <aside className="thread-list">
           <div className="thread-list-heading">
-            <h2>{t('conversations')}</h2>
+            {picker ?? <h2>{t('conversations')}</h2>}
             <span>{threads.length}</span>
             <button
               className="icon-button"

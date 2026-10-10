@@ -1,0 +1,184 @@
+/* WhatsApp page. Every rule is scoped under .content-connections. */
+.content-connections .connections-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.content-connections .settings-card {
+  min-width: 0;
+  padding: 24px;
+  overflow-wrap: anywhere;
+}
+.content-connections .settings-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.content-connections .settings-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.content-connections .settings-card h2 {
+  margin-bottom: 8px;
+  font-size: 16px;
+}
+.content-connections .settings-card > p {
+  max-width: 68ch;
+  font-size: 14px;
+  color: var(--muted);
+}
+.content-connections .settings-card > p + p {
+  margin-top: 12px;
+}
+.content-connections .settings-card > .phone-display {
+  font-size: 18px;
+  color: var(--ink);
+}
+.content-connections .settings-card .badge {
+  max-width: 100%;
+  white-space: normal;
+}
+.content-connections .settings-card form {
+  margin-top: 20px;
+  gap: 12px;
+}
+.content-connections .settings-card form > .btn {
+  align-self: flex-start;
+}
+.content-connections .webhook-panel {
+  grid-column: 1 / -1;
+}
+.content-connections .connection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+  gap: 16px;
+}
+.content-connections .connection-card {
+  padding: 20px;
+}
+.content-connections .connection-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.content-connections .stat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
+  background: var(--surface-3);
+  color: var(--ink-2);
+  flex-shrink: 0;
+}
+.content-connections .stat-icon.mint {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.content-connections .connection-card h2 {
+  font-size: 15px;
+}
+.content-connections .phone-display {
+  width: max-content;
+  max-width: 100%;
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-align: start;
+  font-variant-numeric: tabular-nums;
+}
+.content-connections .phone-display a:hover {
+  color: var(--accent-strong);
+}
+.content-connections .connection-agency {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.content-connections .connection-agency .avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+.content-connections .connection-card footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+.content-connections .webhook-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+.content-connections .webhook-panel .form-error {
+  margin-top: 14px;
+}
+.content-connections .message-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.content-connections .message-controls select {
+  width: auto;
+  min-width: 180px;
+}
+.content-connections .message-list article {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.content-connections .message-list article header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.content-connections .message-list time {
+  font-size: 12px;
+  color: var(--muted);
+}
+.content-connections .message-list article p {
+  margin-top: 6px;
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .content-connections .connections-overview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .content-connections .settings-card {
+    padding: 20px;
+  }
+  .content-connections .message-controls {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .content-connections .message-controls select {
+    width: 100%;
+  }
+}

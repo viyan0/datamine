@@ -19,7 +19,6 @@ export function BusinessSettings({ data, demo }: { data: WorkspaceData; demo: bo
         <Building2 />
       </span>
       <h2>{t('businessSettings')}</h2>
-      <p>{t('businessSettingsHint')}</p>
       <label>
         {t('agency')}
         <select value={id} onChange={(e) => setId(e.target.value)}>

@@ -613,5 +613,21 @@
   },
   "catalogTitle": "العروض",
   "manage": "الإدارة",
-  "offersSub": "كتالوج عروضك. تُقترح العروض النشطة تلقائياً على العملاء المناسبين."
+  "offersSub": "كتالوج عروضك. تُقترح العروض النشطة تلقائياً على العملاء المناسبين.",
+  "searchPages": "انتقل إلى صفحة…",
+  "accountMenu": "قائمة الحساب",
+  "createNew": "إنشاء جديد",
+  "adminDashboard": "لوحة الإدارة",
+  "businessDashboard": "لوحة النشاط التجاري",
+  "adminOverviewSub": "الشركات والعروض واشتراكات العملاء.",
+  "businessOverviewSub": "عملاؤك ومحادثاتك وعروضك.",
+  "platformMetrics": {
+    "activeOffers": "العروض النشطة",
+    "enrolledCustomers": "العملاء المشتركون",
+    "sentOffers": "العروض المرسلة",
+    "offersByBusiness": "العروض حسب الشركة",
+    "centralNumber": "واتساب المركزي",
+    "businesses": "الشركات",
+    "manageBusinesses": "إدارة الشركات"
+  }
 }

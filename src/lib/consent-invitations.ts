@@ -7,7 +7,7 @@ import { sendMetaText } from './meta';
 import { replyWindowOpen } from './inbox-types';
 
 export function invitationCopy(phone: string, locale: string) {
-  const link = `https://wa.me/${phone.replace(/\D/g, '')}?text=Hi%20Datamine`;
+  const link = `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent('Get me enrolled in Datamine')}`;
   const copy = {
     en: `Want relevant offers from Datamine and participating businesses? Open Datamine to read the privacy notice and accept once. Your messages will not be analysed until you agree.\n${link}`,
     ar: `هل تريد عروضاً مناسبة من Datamine والشركات المشاركة؟ افتح Datamine لقراءة إشعار الخصوصية والموافقة مرة واحدة. لن تُحلل رسائلك حتى توافق.\n${link}`,
